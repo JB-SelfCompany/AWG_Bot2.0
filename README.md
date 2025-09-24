@@ -251,8 +251,8 @@ awg-quick up awg0
 ## 📸 Скриншоты
 
 | Главное меню |  Клиент | Редактирование клиента | Статистика сервера | Резервные копии |
-|-----------------|------------------------|-------------------|-----------------|
-| ![Menu](https://github.com/JB-SelfCompany/telegram-php-widget/blob/main/raw/1.png?text=Widget) | ![Client](https://github.com/JB-SelfCompany/telegram-php-widget/blob/main/raw/2.png?text=Telegram+Notify) | ![Editing](https://github.com/JB-SelfCompany/telegram-php-widget/blob/main/raw/3.png?text=Telegram+Notify) | ![Statistic](https://github.com/JB-SelfCompany/telegram-php-widget/blob/main/raw/4.png?text=Telegram+Notify) | ![Backup](https://github.com/JB-SelfCompany/telegram-php-widget/blob/main/raw/3.png?text=Telegram+Notify) |
+|-----------------|------------------------|-------------------|-----------------|-----------------|
+| ![Menu](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image1.png) | ![Client](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image2.png) | ![Editing](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image3.png) | ![Statistic](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image4.png) | ![Backup](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image5.png) |
 
 ---
 
