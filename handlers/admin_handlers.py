@@ -17,6 +17,7 @@ from database.database import get_db, Client
 from services.awg_manager import AWGManager
 from services.ip_service import IPService
 from services.backup_service import BackupService
+from services.settings_service import SettingsService
 from keyboards.main_keyboards import *
 from utils.qr_generator import generate_qr_code
 from utils.vpn_converter import conf_to_vpn_url
@@ -30,6 +31,7 @@ awg_manager = AWGManager(config)
 ip_service = IPService(config)
 backup_service = BackupService(config)
 db = get_db()
+settings_service = SettingsService()
 logger = logging.getLogger(__name__)
 
 # Глобальная переменная для хранения ID последнего сообщения каждого пользователя
@@ -50,6 +52,239 @@ class EditClientStates(StatesGroup):
     waiting_new_traffic_limit = State()
     waiting_edit_time_value = State()
     waiting_edit_time_unit = State()
+
+class SettingsStates(StatesGroup):
+    """Состояния для настройки параметров"""
+    waiting_dns = State()
+    waiting_endpoint = State()
+
+@admin_router.callback_query(F.data == "settings_menu")
+async def show_settings_menu(callback: CallbackQuery):
+    """Показать меню параметров"""
+    await edit_or_send_message(
+        callback,
+        "⚙️ Параметры бота\n\n"
+        "Здесь можно настроить параметры по умолчанию:",
+        reply_markup=get_settings_menu()
+    )
+    await callback.answer()
+
+@admin_router.callback_query(F.data == "settings_show")
+async def show_settings_info(callback: CallbackQuery):
+    """Показать текущие настройки"""
+    dns = await settings_service.get_default_dns()
+    endpoint = await settings_service.get_default_endpoint()
+    
+    endpoint_text = endpoint if endpoint else "Не установлен (будет спрашиваться)"
+    
+    await edit_or_send_message(
+        callback,
+        f"📋 Текущие настройки:\n\n"
+        f"🌐 DNS серверы: {dns}\n"
+        f"📡 Endpoint по умолчанию: {endpoint_text}",
+        reply_markup=get_settings_menu()
+    )
+    await callback.answer()
+
+@admin_router.callback_query(F.data == "settings_dns")
+async def start_dns_setup(callback: CallbackQuery, state: FSMContext):
+    """Начать настройку DNS"""
+    current_dns = await settings_service.get_default_dns()
+    
+    await edit_or_send_message(
+        callback,
+        f"🌐 Настройка DNS серверов\n\n"
+        f"Текущие DNS: {current_dns}\n\n"
+        f"Введите новые DNS серверы через запятую:\n"
+        f"Например: 1.1.1.1, 8.8.8.8",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔙 Отмена", callback_data="settings_menu")
+        ]])
+    )
+    await state.set_state(SettingsStates.waiting_dns)
+    await callback.answer()
+
+@admin_router.message(StateFilter(SettingsStates.waiting_dns))
+async def process_dns_setup(message: Message, state: FSMContext):
+    """Обработка настройки DNS"""
+    dns_servers = message.text.strip()
+    user_id = message.from_user.id
+    
+    try:
+        await message.delete()
+    except:
+        pass
+    
+    if not settings_service.validate_dns_servers(dns_servers):
+        if user_id in user_last_message:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=user_last_message[user_id],
+                    text="❌ Некорректные DNS серверы\n\n"
+                         "Введите IP-адреса DNS серверов через запятую:",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text="🔙 Отмена", callback_data="settings_menu")
+                    ]])
+                )
+            except:
+                pass
+        return
+    
+    success = await settings_service.set_default_dns(dns_servers)
+    await state.clear()
+    
+    if success:
+        if user_id in user_last_message:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=user_last_message[user_id],
+                    text=f"✅ DNS серверы обновлены!\n\n"
+                         f"Новые DNS: {dns_servers}\n\n"
+                         f"Все новые клиенты будут использовать эти DNS серверы.",
+                    reply_markup=get_settings_menu()
+                )
+            except:
+                pass
+
+@admin_router.callback_query(F.data == "settings_endpoint")
+async def show_endpoint_settings(callback: CallbackQuery):
+    """Показать настройки endpoint"""
+    current_endpoint = await settings_service.get_default_endpoint()
+    endpoint_text = current_endpoint if current_endpoint else "Не установлен"
+    
+    await edit_or_send_message(
+        callback,
+        f"📡 Настройки Endpoint\n\n"
+        f"Текущий endpoint по умолчанию: {endpoint_text}\n\n"
+        f"Если endpoint установлен, он будет автоматически подставляться "
+        f"всем новым клиентам. Если не установлен, будет спрашиваться при создании клиента.",
+        reply_markup=get_endpoint_settings_menu()
+    )
+    await callback.answer()
+
+@admin_router.callback_query(F.data == "set_default_endpoint")
+async def start_endpoint_setup(callback: CallbackQuery, state: FSMContext):
+    """Начать настройку endpoint по умолчанию"""
+    current_endpoint = await settings_service.get_default_endpoint()
+    
+    endpoint_text = current_endpoint if current_endpoint else "не установлен"
+    
+    await edit_or_send_message(
+        callback,
+        f"📡 Настройка Endpoint по умолчанию\n\n"
+        f"Текущий endpoint: {endpoint_text}\n\n"
+        f"Введите IP-адрес или домен сервера:\n"
+        f"Примеры:\n"
+        f"• vpn.example.com\n"
+        f"• my-server.ru",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔙 Отмена", callback_data="settings_endpoint")
+        ]])
+    )
+    await state.set_state(SettingsStates.waiting_endpoint)
+    await callback.answer()
+
+@admin_router.message(StateFilter(SettingsStates.waiting_endpoint))
+async def process_endpoint_setup(message: Message, state: FSMContext):
+    """Обработка настройки endpoint"""
+    endpoint = message.text.strip()
+    user_id = message.from_user.id
+    
+    try:
+        await message.delete()
+    except:
+        pass
+    
+    if not settings_service.validate_endpoint(endpoint):
+        if user_id in user_last_message:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=user_last_message[user_id],
+                    text="❌ Некорректный endpoint\n\n"
+                         "Введите корректный IP-адрес или домен:\n"
+                         "Примеры: 192.168.1.100, vpn.example.com",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text="🔙 Отмена", callback_data="settings_endpoint")
+                    ]])
+                )
+            except:
+                pass
+        return
+    
+    success = await settings_service.set_default_endpoint(endpoint)
+    await state.clear()
+    
+    if success:
+        if user_id in user_last_message:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=user_last_message[user_id],
+                    text=f"✅ Endpoint по умолчанию установлен!\n\n"
+                         f"Новый endpoint: {endpoint}\n\n"
+                         f"Теперь все новые клиенты будут автоматически использовать "
+                         f"этот endpoint. Вам больше не нужно будет вводить его при создании клиентов.",
+                    reply_markup=get_endpoint_settings_menu()
+                )
+            except:
+                pass
+
+@admin_router.callback_query(F.data == "clear_default_endpoint")
+async def clear_endpoint_confirm(callback: CallbackQuery):
+    """Подтверждение очистки endpoint по умолчанию"""
+    current_endpoint = await settings_service.get_default_endpoint()
+    
+    if not current_endpoint:
+        await edit_or_send_message(
+            callback,
+            "📡 Endpoint по умолчанию не установлен\n\n"
+            "Нечего очищать.",
+            reply_markup=get_endpoint_settings_menu()
+        )
+    else:
+        await edit_or_send_message(
+            callback,
+            f"📡 Очистка Endpoint по умолчанию\n\n"
+            f"Текущий endpoint: {current_endpoint}\n\n"
+            f"После очистки при создании новых клиентов "
+            f"вам снова нужно будет вводить endpoint вручную.\n\n"
+            f"Подтвердите действие:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="✅ Да, очистить", 
+                    callback_data="confirm_clear_endpoint"
+                )],
+                [InlineKeyboardButton(
+                    text="🔙 Отмена", 
+                    callback_data="settings_endpoint"
+                )]
+            ])
+        )
+    await callback.answer()
+
+@admin_router.callback_query(F.data == "confirm_clear_endpoint")
+async def confirm_clear_endpoint(callback: CallbackQuery):
+    """Подтвердить очистку endpoint"""
+    success = await settings_service.set_default_endpoint("")
+    
+    if success:
+        await edit_or_send_message(
+            callback,
+            "✅ Endpoint по умолчанию очищен!\n\n"
+            "Теперь при создании новых клиентов вам снова нужно будет "
+            "вводить endpoint вручную.",
+            reply_markup=get_endpoint_settings_menu()
+        )
+    else:
+        await edit_or_send_message(
+            callback,
+            "❌ Ошибка при очистке endpoint",
+            reply_markup=get_endpoint_settings_menu()
+        )
+    await callback.answer()
 
 async def update_client_traffic_usage(client: Client, stats: dict) -> None:
     """Обновление использования трафика клиента из статистики AWG"""
@@ -197,15 +432,35 @@ async def show_clients_menu(callback: CallbackQuery):
 @admin_router.callback_query(F.data == "add_client")
 async def start_add_client(callback: CallbackQuery, state: FSMContext):
     """Начать процесс добавления клиента"""
-    await edit_or_send_message(
-        callback,
-        "➕ Добавление нового клиента\n\n"
-        "Введите имя клиента (только латинские буквы, цифры и символы - _ .):",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="🔙 Отмена", callback_data="clients_menu")
-        ]])
-    )
-    await state.set_state(ClientStates.waiting_name)
+    # Проверяем есть ли endpoint по умолчанию
+    default_endpoint = await settings_service.get_default_endpoint()
+    
+    if default_endpoint:
+        # Если есть endpoint по умолчанию, сохраняем его и переходим к выбору времени
+        await state.update_data(endpoint=default_endpoint)
+        
+        await edit_or_send_message(
+            callback,
+            f"➕ Добавление нового клиента\n\n"
+            f"📡 Endpoint: {default_endpoint} (из настроек)\n\n"
+            f"Введите имя клиента:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔙 Отмена", callback_data="clients_menu")
+            ]])
+        )
+        await state.set_state(ClientStates.waiting_name)
+    else:
+        # Если нет endpoint по умолчанию, показываем стандартное сообщение
+        await edit_or_send_message(
+            callback,
+            "➕ Добавление нового клиента\n\n"
+            "Введите имя клиента:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔙 Отмена", callback_data="clients_menu")
+            ]])
+        )
+        await state.set_state(ClientStates.waiting_name)
+    
     await callback.answer()
 
 # Обработка имени клиента с динамическим сообщением
@@ -275,6 +530,23 @@ async def process_client_name(message: Message, state: FSMContext):
     
     await state.update_data(name=name)
     
+    state_data = await state.get_data()
+    if 'endpoint' in state_data:
+        if user_id in user_last_message:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=user_last_message[user_id],
+                    text=f"➕ Добавление нового клиента\n\n"
+                         f"✅ Имя: {name}\n"
+                         f"✅ Endpoint: {state_data['endpoint']} (из настроек)\n\n"
+                         f"Выберите срок действия:",
+                    reply_markup=get_time_limit_keyboard()
+                )
+            except:
+                pass
+        return
+    
     if user_id in user_last_message:
         try:
             await message.bot.edit_message_text(
@@ -282,8 +554,7 @@ async def process_client_name(message: Message, state: FSMContext):
                 message_id=user_last_message[user_id],
                 text=f"➕ Добавление нового клиента\n\n"
                      f"✅ Имя клиента: {name}\n\n"
-                     f"Введите внешний IP-адрес или домен сервера (Endpoint):\n"
-                     f"Например: 192.168.1.100 или example.com",
+                     f"Введите endpoint сервера:",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                     InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_add_client")
                 ]])
@@ -440,7 +711,7 @@ async def process_custom_time_value(message: Message, state: FSMContext):
     
     try:
         value = int(message.text.strip())
-        if value <= 0 or value > 1000:  # Разумные пределы
+        if value <= 0 or value > 1000:
             raise ValueError()
             
         data = await state.get_data()
@@ -508,10 +779,13 @@ async def process_traffic_limit(callback: CallbackQuery, state: FSMContext):
     
     # Получаем все данные и создаем клиента
     data = await state.get_data()
-    
+    name = data.get("name")
+    endpoint = data.get("endpoint")
+    expires_at = data.get("expires_at")
+
     try:
         # Генерируем ключи
-        private_key, public_key = awg_manager.generate_keypair()
+        private_key, public_key, preshared_key = awg_manager.generate_keypair_with_preshared()
         
         # Получаем свободный IP
         ip_address = await awg_manager.get_next_available_ip()
@@ -527,13 +801,14 @@ async def process_traffic_limit(callback: CallbackQuery, state: FSMContext):
         
         # Создаем клиента
         client = Client(
-            name=data['name'],
+            name=name,
             public_key=public_key,
             private_key=private_key,
+            preshared_key=preshared_key,
             ip_address=ip_address,
-            endpoint=data['endpoint'],
-            expires_at=data.get('expires_at'),
-            traffic_limit=traffic_limit_bytes,
+            endpoint=endpoint,
+            expires_at=expires_at,
+            traffic_limit=traffic_limit,
             is_active=True,
             is_blocked=False
         )
@@ -554,10 +829,9 @@ async def process_traffic_limit(callback: CallbackQuery, state: FSMContext):
                 f"✅ Клиент успешно создан!\n\n"
                 f"👤 Имя: {client.name}\n"
                 f"🌐 IP: {client.ip_address}\n"
-                f"📡 Endpoint: {client.endpoint}\n"
-                f"⏰ Действует до: {expires_text}\n"
-                f"📊 Лимит трафика: {traffic_text}",
-                reply_markup=get_client_details_keyboard(client_id)
+                f"🔐 Preshared Key: Включен\n\n" 
+                f"Конфигурация готова к использованию.",
+                reply_markup=get_client_details_keyboard(client.id)
             )
         else:
             # Удаляем из базы если не удалось добавить на сервер
@@ -773,7 +1047,7 @@ async def send_client_config(callback: CallbackQuery):
         formatted_config = format_client_config(client.name, config_text)
         
         full_message = f"{formatted_config}\n\n" \
-                      f"🔗 **VPN URL для внешних приложений:**\n" \
+                      f"🔗 VPN URL для внешних приложений:\n" \
                       f"<pre>{vpn_url}</pre>"
         
         await edit_or_send_message(
@@ -953,7 +1227,7 @@ async def show_client_stats(callback: CallbackQuery):
 📤 Отправлено: {tx_bytes}  
 🤝 Последнее подключение: {last_handshake}
 📊 Использовано трафика: {format_traffic_size(client.traffic_used)}
-📈 Лимит трафика: {'Без ограничений' if not client.traffic_limit else format_traffic_size(client.traffic_limit)}"""
+📈 Лимит трафика: {'Без ограничений' if not client.traffic_limit or client.traffic_limit == 'unlimited' else format_traffic_size(client.traffic_limit)}"""
     
     await edit_or_send_message(
         callback,

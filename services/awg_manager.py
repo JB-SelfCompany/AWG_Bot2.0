@@ -13,6 +13,7 @@ import base64
 import ipaddress
 from config import Config
 from database.database import Client, get_db
+from services.settings_service import SettingsService
 
 class AWGManager:
     """Менеджер для работы с AmneziaWG"""
@@ -305,17 +306,18 @@ class AWGManager:
             return None
 
     async def add_peer_to_server(self, client: Client) -> bool:
-        """Добавить пира на сервер AmneziaWG"""
-        self.logger.info(f"Добавление клиента на сервер: {client.name}")
         try:
             process = await asyncio.create_subprocess_exec(
                 'awg', 'set', self.config.awg_interface,
                 'peer', client.public_key,
+                'preshared-key', '/dev/stdin',
                 'allowed-ips', f"{client.ip_address}/32",
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await process.communicate()
+            
+            stdout, stderr = await process.communicate(input=client.preshared_key.encode())
             
             if process.returncode == 0:
                 self.logger.info("Клиент добавлен на сервер")
@@ -325,11 +327,14 @@ class AWGManager:
             sudo_process = await asyncio.create_subprocess_exec(
                 'sudo', 'awg', 'set', self.config.awg_interface,
                 'peer', client.public_key,
+                'preshared-key', '/dev/stdin',
                 'allowed-ips', f"{client.ip_address}/32",
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            sudo_stdout, sudo_stderr = await sudo_process.communicate()
+            
+            stdout, stderr = await process.communicate(input=client.preshared_key.encode())
             
             if sudo_process.returncode == 0:
                 self.logger.info("Клиент добавлен на сервер с sudo")
@@ -416,10 +421,12 @@ class AWGManager:
         self.logger.debug(f"Создание конфигурации для клиента: {client.name}")
         
         try:
+            settings_service = SettingsService()
             server_public_key = await self.get_server_public_key()
             if not server_public_key:
                 raise Exception("Не удалось получить публичный ключ сервера")
             
+            dns_servers = await settings_service.get_default_dns()
             additional_params = await self.get_server_amnezia_params()
             if additional_params is None:
                 self.logger.error("Не удалось получить параметры Amnezia, используем обычный WireGuard")
@@ -429,7 +436,7 @@ class AWGManager:
                 "[Interface]",
                 f"PrivateKey = {client.private_key}",
                 f"Address = {client.ip_address}/32",
-                "DNS = 8.8.8.8, 1.1.1.1"
+                f"DNS = {dns_servers}"
             ]
             
             if additional_params:
@@ -441,14 +448,16 @@ class AWGManager:
             
             config_lines.append("")
             config_lines.extend([
+                "",
                 "[Peer]",
                 f"PublicKey = {server_public_key}",
+                f"PresharedKey = {client.preshared_key}",
                 "AllowedIPs = 0.0.0.0/0",
                 f"Endpoint = {client.endpoint}:{self.config.server_port}",
                 "PersistentKeepalive = 25"
             ])
             
-            config = '\n'.join(config_lines)
+            return '\n'.join(config_lines)
             self.logger.debug("Конфигурация создана успешно")
             return config
             
@@ -564,6 +573,26 @@ class AWGManager:
         except Exception as e:
             self.logger.error(f"Ошибка при получении публичного ключа: {e}")
             return None
+
+    def generate_preshared_key(self) -> str:
+        """Генерация Preshared Key для дополнительной безопасности"""
+        try:
+            preshared_bytes = os.urandom(32)
+            preshared_key_b64 = base64.b64encode(preshared_bytes).decode('utf-8')
+            return preshared_key_b64
+        except Exception as e:
+            self.logger.error(f"Ошибка при генерации Preshared Key: {e}")
+            raise
+
+    def generate_keypair_with_preshared(self) -> Tuple[str, str, str]:
+        """Генерация пары ключей + preshared key для клиента"""
+        try:
+            private_key, public_key = self.generate_keypair()
+            preshared_key = self.generate_preshared_key()
+            return private_key, public_key, preshared_key
+        except Exception as e:
+            self.logger.error(f"Ошибка при генерации ключей с Preshared: {e}")
+            raise
 
     def private_to_public_key(self, private_key_b64: str) -> Optional[str]:
         """Конвертировать приватный ключ в публичный"""

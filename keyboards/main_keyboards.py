@@ -3,21 +3,73 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List, Optional
 from database.database import Client
 
+# Добавьте в get_main_menu():
 def get_main_menu() -> InlineKeyboardMarkup:
     """Главное меню бота"""
     builder = InlineKeyboardBuilder()
+    
     builder.add(InlineKeyboardButton(
         text="👥 Управление клиентами",
         callback_data="clients_menu"
     ))
     builder.add(InlineKeyboardButton(
-        text="📊 Статистика", 
+        text="📊 Статистика",
         callback_data="stats_menu"
     ))
     builder.add(InlineKeyboardButton(
         text="💾 Резервные копии",
         callback_data="backup_menu"
     ))
+    builder.add(InlineKeyboardButton(
+        text="⚙️ Параметры",
+        callback_data="settings_menu"
+    ))
+    
+    builder.adjust(1)
+    return builder.as_markup()
+
+# Добавьте новые клавиатуры для настроек:
+def get_settings_menu() -> InlineKeyboardMarkup:
+    """Меню параметров"""
+    builder = InlineKeyboardBuilder()
+    
+    builder.add(InlineKeyboardButton(
+        text="🌐 Настроить DNS",
+        callback_data="settings_dns"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="📡 Настроить Endpoint",
+        callback_data="settings_endpoint"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="📋 Показать настройки",
+        callback_data="settings_show"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="🔙 Главное меню",
+        callback_data="main_menu"
+    ))
+    
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_endpoint_settings_menu() -> InlineKeyboardMarkup:
+    """Меню настроек endpoint"""
+    builder = InlineKeyboardBuilder()
+    
+    builder.add(InlineKeyboardButton(
+        text="📝 Установить endpoint",
+        callback_data="set_default_endpoint"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="🗑️ Очистить endpoint",
+        callback_data="clear_default_endpoint"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="🔙 Назад к параметрам",
+        callback_data="settings_menu"
+    ))
+    
     builder.adjust(1)
     return builder.as_markup()
 

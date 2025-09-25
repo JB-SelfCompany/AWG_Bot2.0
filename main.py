@@ -95,7 +95,8 @@ async def check_client_limits():
                         logger.debug(f"Трафик клиента {client.name} обновлен: {old_traffic} -> {updated_client.traffic_used}")
                     
                     if (updated_client.traffic_limit and 
-                        updated_client.traffic_used >= updated_client.traffic_limit and 
+                        isinstance(updated_client.traffic_limit, int) and
+                        updated_client.traffic_used >= updated_client.traffic_limit and
                         not updated_client.is_blocked and updated_client.is_active):
                         updated_client.is_blocked = True
                         await db.update_client(updated_client)

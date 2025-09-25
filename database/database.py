@@ -11,6 +11,7 @@ class Client:
     name: str = ""
     public_key: str = ""
     private_key: str = ""
+    preshared_key: str = ""
     ip_address: str = ""
     endpoint: str = ""
     created_at: Optional[datetime] = None
@@ -20,9 +21,19 @@ class Client:
     is_active: bool = True
     is_blocked: bool = False
     last_ip: str = ""
-    daily_ips: str = "" 
+    daily_ips: str = ""
 
-@dataclass 
+@dataclass
+class BotSettings:
+    """Модель настроек бота"""
+    id: Optional[int] = None
+    setting_key: str = ""
+    setting_value: str = ""
+    description: str = ""
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+@dataclass
 class ClientIPConnection:
     """Модель подключения клиента по IP"""
     id: Optional[int] = None
@@ -39,7 +50,7 @@ class Database:
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.logger = logging.getLogger(__name__)
-
+    
     async def init_db(self):
         """Инициализация базы данных"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -49,6 +60,7 @@ class Database:
                 name TEXT NOT NULL UNIQUE,
                 public_key TEXT NOT NULL,
                 private_key TEXT NOT NULL,
+                preshared_key TEXT DEFAULT '',
                 ip_address TEXT NOT NULL UNIQUE,
                 endpoint TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -63,14 +75,20 @@ class Database:
             """)
             
             try:
+                await db.execute("ALTER TABLE clients ADD COLUMN preshared_key TEXT DEFAULT ''")
+            except:
+                pass
+
+            try:
                 await db.execute("ALTER TABLE clients ADD COLUMN last_ip TEXT DEFAULT ''")
             except:
                 pass
+                
             try:
                 await db.execute("ALTER TABLE clients ADD COLUMN daily_ips TEXT DEFAULT ''")
             except:
                 pass
-                
+            
             await db.execute("""
             CREATE TABLE IF NOT EXISTS client_ip_connections (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,20 +102,87 @@ class Database:
             )
             """)
             
+            await db.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                setting_key TEXT NOT NULL UNIQUE,
+                setting_value TEXT NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+            
+            await db.execute("""
+            INSERT OR IGNORE INTO bot_settings (setting_key, setting_value, description)
+            VALUES 
+                ('default_dns', '1.1.1.1, 8.8.8.8', 'DNS сервера по умолчанию'),
+                ('default_endpoint', '', 'Endpoint по умолчанию')
+            """)
+            
             await db.commit()
             self.logger.info("База данных инициализирована")
+
+    async def get_setting(self, setting_key: str) -> Optional[str]:
+        """Получение значения настройки"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT setting_value FROM bot_settings WHERE setting_key = ?", 
+                (setting_key,)
+            )
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+    async def set_setting(self, setting_key: str, setting_value: str, description: str = "") -> bool:
+        """Установка значения настройки"""
+        async with aiosqlite.connect(self.db_path) as db:
+            now = datetime.now()
+            cursor = await db.execute("""
+            INSERT OR REPLACE INTO bot_settings 
+            (setting_key, setting_value, description, updated_at)
+            VALUES (?, ?, ?, ?)
+            """, (setting_key, setting_value, description, now))
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def get_all_settings(self) -> List[BotSettings]:
+        """Получение всех настроек"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM bot_settings ORDER BY setting_key")
+            rows = await cursor.fetchall()
+            return [self._row_to_setting(row) for row in rows]
+
+    def _row_to_setting(self, row: aiosqlite.Row) -> BotSettings:
+        """Преобразование строки БД в объект BotSettings"""
+        created_at = None
+        updated_at = None
+        
+        if row["created_at"]:
+            created_at = datetime.fromisoformat(row["created_at"])
+        if row["updated_at"]:
+            updated_at = datetime.fromisoformat(row["updated_at"])
+        
+        return BotSettings(
+            id=row["id"],
+            setting_key=row["setting_key"],
+            setting_value=row["setting_value"],
+            description=row["description"],
+            created_at=created_at,
+            updated_at=updated_at
+        )
 
     async def add_client(self, client: Client) -> int:
         """Добавление нового клиента"""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
-            INSERT INTO clients (name, public_key, private_key, ip_address,
-                                endpoint, expires_at, traffic_limit, is_active, is_blocked,
-                                last_ip, daily_ips)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO clients (name, public_key, private_key, preshared_key, ip_address,
+                               endpoint, expires_at, traffic_limit, is_active, is_blocked,
+                               last_ip, daily_ips)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 client.name, client.public_key, client.private_key,
-                client.ip_address, client.endpoint, client.expires_at,
+                client.preshared_key, client.ip_address, client.endpoint, client.expires_at,
                 client.traffic_limit, client.is_active, client.is_blocked,
                 client.last_ip, client.daily_ips
             ))
@@ -254,6 +339,7 @@ class Database:
             name=row["name"],
             public_key=row["public_key"],
             private_key=row["private_key"],
+            preshared_key=row["preshared_key"],
             ip_address=row["ip_address"],
             endpoint=row["endpoint"],
             created_at=created_at,
