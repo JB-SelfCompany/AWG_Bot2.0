@@ -3,7 +3,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List, Optional
 from database.database import Client
 
-# Добавьте в get_main_menu():
 def get_main_menu() -> InlineKeyboardMarkup:
     """Главное меню бота"""
     builder = InlineKeyboardBuilder()
@@ -28,7 +27,6 @@ def get_main_menu() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-# Добавьте новые клавиатуры для настроек:
 def get_settings_menu() -> InlineKeyboardMarkup:
     """Меню параметров"""
     builder = InlineKeyboardBuilder()
