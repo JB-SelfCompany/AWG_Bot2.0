@@ -506,7 +506,7 @@ class AWGManager:
             skip_params = {
                 'PrivateKey', 'PublicKey', 'Address', 'ListenPort', 
                 'PostUp', 'PostDown', 'DNS', 'AllowedIPs', 
-                'Endpoint', 'PersistentKeepalive', 'PresharedKey'
+                'Endpoint', 'PersistentKeepalive', 'PresharedKey', 'FwMark'
             }
             
             amnezia_params = {}
