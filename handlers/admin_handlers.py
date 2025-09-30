@@ -1100,10 +1100,10 @@ async def toggle_client_block(callback: CallbackQuery):
     else:
         await callback.answer(f"❌ Ошибка при изменении статуса клиента", show_alert=True)
 
-# Конфигурация клиента - с добавлением vpn:// строки
+# Конфигурация клиента - с отправкой .conf файла
 @admin_router.callback_query(F.data.startswith("client_config:"))
 async def send_client_config(callback: CallbackQuery):
-    """Отправить конфигурацию клиента"""
+    """Отправить конфигурацию клиента с файлом .conf"""
     client_id = int(callback.data.split(":", 1)[1])
     client = await db.get_client(client_id)
     
@@ -1111,11 +1111,16 @@ async def send_client_config(callback: CallbackQuery):
         await callback.answer("❌ Клиент не найден", show_alert=True)
         return
     
+    user_id = callback.from_user.id
+    
     try:
         from utils.vpn_converter import conf_to_vpn_url
+        from aiogram.types import BufferedInputFile
         
+        # Генерируем конфигурацию
         config_text = await awg_manager.create_client_config(client)
         
+        # Генерируем vpn:// URL
         try:
             vpn_url = conf_to_vpn_url(config_text)
         except Exception as e:
@@ -1124,22 +1129,102 @@ async def send_client_config(callback: CallbackQuery):
         
         formatted_config = format_client_config(client.name, config_text)
         
+        # Создаем полное сообщение с HTML форматированием
         full_message = f"{formatted_config}\n\n" \
                       f"🔗 VPN URL для внешних приложений:\n" \
                       f"<pre>{vpn_url}</pre>"
         
-        await edit_or_send_message(
-            callback,
-            full_message,
+        if user_id in user_last_message:
+            try:
+                await callback.bot.delete_message(
+                    chat_id=user_id,
+                    message_id=user_last_message[user_id]
+                )
+            except Exception as e:
+                logger.debug(f"Не удалось удалить предыдущее сообщение: {e}")
+        
+        sent_message = await callback.bot.send_message(
+            chat_id=user_id,
+            text=full_message,
+            parse_mode="HTML"
+        )
+        
+        # Обновляем ID последнего сообщения
+        user_last_message[user_id] = sent_message.message_id
+        
+        # Создаем .conf файл
+        conf_filename = f"{client.name}.conf"
+        conf_file = BufferedInputFile(
+            file=config_text.encode('utf-8'),
+            filename=conf_filename
+        )
+        
+        # Отправляем файл конфигурации
+        await callback.bot.send_document(
+            chat_id=user_id,
+            document=conf_file,
+            caption=f"📄 Конфигурационный файл для {client.name}\n\n"
+                   f"Импортируйте этот файл в приложение AmneziaWG",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="🔙 Назад к клиенту", callback_data=f"client_details:{client_id}")
+                InlineKeyboardButton(
+                    text="🔙 Назад к клиенту",
+                    callback_data=f"back_from_config:{client_id}"
+                )
             ]])
         )
+        
         await callback.answer("✅ Конфигурация отправлена")
         
     except Exception as e:
-        logger.error(f"Ошибка при создании конфигурации: {e}")
-        await callback.answer("❌ Ошибка при создании конфигурации", show_alert=True)
+        logger.error(f"Ошибка при отправке конфигурации: {e}")
+        await callback.answer("❌ Ошибка при генерации конфигурации", show_alert=True)
+
+
+# Возврат из конфигурации к карточке клиента
+@admin_router.callback_query(F.data.startswith("back_from_config:"))
+async def back_from_config(callback: CallbackQuery):
+    """Вернуться к карточке клиента из конфигурации"""
+    client_id = int(callback.data.split(":", 1)[1])
+    client = await db.get_client(client_id)
+    
+    if not client:
+        await callback.answer("❌ Клиент не найден", show_alert=True)
+        return
+    
+    user_id = callback.from_user.id
+    
+    try:
+        await callback.message.delete()
+    except Exception as e:
+        logger.debug(f"Не удалось удалить сообщение с файлом: {e}")
+    
+    if user_id in user_last_message:
+        try:
+            await callback.bot.delete_message(
+                chat_id=user_id,
+                message_id=user_last_message[user_id]
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось удалить текстовое сообщение: {e}")
+    
+    # Получаем статистику клиента
+    stats = await awg_manager.get_interface_stats()
+    client_stats = stats.get(client.public_key, {})
+    
+    # Обновляем использование трафика
+    await update_client_traffic_usage(client, client_stats)
+    
+    client_info = format_client_info(client, client_stats)
+    
+    new_message = await callback.bot.send_message(
+        chat_id=user_id,
+        text=client_info,
+        reply_markup=get_client_details_keyboard(client.id),
+        parse_mode="Markdown"
+    )
+    
+    user_last_message[user_id] = new_message.message_id
+    await callback.answer()
 
 # QR-код конфигурации - с динамическим обновлением и кнопкой возврата
 @admin_router.callback_query(F.data.startswith("client_qr:"))
