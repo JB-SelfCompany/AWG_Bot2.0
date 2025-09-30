@@ -56,11 +56,11 @@ def get_endpoint_settings_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     builder.add(InlineKeyboardButton(
-        text="📝 Установить endpoint",
+        text="📝 Установить Endpoint",
         callback_data="set_default_endpoint"
     ))
     builder.add(InlineKeyboardButton(
-        text="🗑️ Очистить endpoint",
+        text="🗑️ Очистить Endpoint",
         callback_data="clear_default_endpoint"
     ))
     builder.add(InlineKeyboardButton(
@@ -340,7 +340,7 @@ def get_edit_client_keyboard(client_id: int) -> InlineKeyboardMarkup:
         callback_data=f"edit_name:{client_id}"
     ))
     builder.add(InlineKeyboardButton(
-        text="📡 Изменить endpoint",
+        text="📡 Изменить Endpoint",
         callback_data=f"edit_endpoint:{client_id}"
     ))
     builder.add(InlineKeyboardButton(

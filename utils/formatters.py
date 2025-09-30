@@ -29,7 +29,7 @@ def format_client_info(client: Client, stats: Optional[Dict[str, Any]] = None) -
         used_percent = (client.traffic_used / client.traffic_limit * 100) if client.traffic_limit > 0 else 0
         if used_percent >= 100:
             traffic_limit_text += " ❌ Превышен"
-
+    
     # Статистика подключения
     transfer_info = ""
     last_handshake = ""
@@ -37,20 +37,23 @@ def format_client_info(client: Client, stats: Optional[Dict[str, Any]] = None) -
         transfer = stats.get('transfer', '0 B, 0 B')
         rx_bytes, tx_bytes = transfer.split(', ')
         transfer_info = f"\n\n📥 Получено: {rx_bytes}\n📤 Отправлено: {tx_bytes}"
-        
         handshake = stats.get('latest handshake', 'Никогда')
         last_handshake = f"\n🤝 Последнее подключение: {handshake}"
     
+    # Формируем строку с IPv6 только если он есть
+    ipv6_line = ""
+    if client.has_ipv6 and client.ipv6_address:
+        ipv6_line = f"\n📡 IPv6: {client.ipv6_address}"
+    
     info_text = f"""👤 Клиент: {client.name}
-
 📊 Статус: {status}
 🌐 Подключение: {connection_status}
-📱 IP-адрес: {client.ip_address}
-⏰ Действует до: {expires_text}
-📊 Трафик: {format_traffic_size(client.traffic_used)} / {traffic_limit_text}
-📅 Создан: {client.created_at.strftime('%d.%m.%Y %H:%M') if client.created_at else 'Неизвестно'}{transfer_info}{last_handshake}
-
+📡 IP: {client.ip_address}{ipv6_line}\n
+📅 Создан: {client.created_at.strftime('%d.%m.%Y %H:%M') if client.created_at else 'Неизвестно'}
+⏰ Действует до: {expires_text}\n
+📈 Трафик: {format_traffic_size(client.traffic_used)} / {traffic_limit_text}{transfer_info}{last_handshake}
 """
+    
     return info_text
 
 def format_client_config(client_name: str, config_text: str) -> str:
@@ -59,7 +62,7 @@ def format_client_config(client_name: str, config_text: str) -> str:
 
 <pre>{config_text}</pre>\n
 💾 Сохраните этот текст в файл с расширением .conf
-📱 Или импортируйте через QR-код в приложении AmneziaVPN"""
+📱 Или импортируйте через QR-код в приложении AmneziaWG"""
 
 def format_traffic_size(bytes_count) -> str:
     """Форматирование размера трафика с защитой от некорректных значений"""

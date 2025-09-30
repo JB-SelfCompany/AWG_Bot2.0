@@ -44,6 +44,7 @@ class ClientStates(StatesGroup):
     waiting_custom_time = State()
     waiting_custom_time_value = State()
     waiting_client_search = State()
+    waiting_ipv6_choice = State()
 
 class EditClientStates(StatesGroup):
     """Состояния для редактирования клиента"""
@@ -157,8 +158,8 @@ async def show_endpoint_settings(callback: CallbackQuery):
     await edit_or_send_message(
         callback,
         f"📡 Настройки Endpoint\n\n"
-        f"Текущий endpoint по умолчанию: {endpoint_text}\n\n"
-        f"Если endpoint установлен, он будет автоматически подставляться "
+        f"Текущий Endpoint по умолчанию: {endpoint_text}\n\n"
+        f"Если Endpoint установлен, он будет автоматически подставляться "
         f"всем новым клиентам. Если не установлен, будет спрашиваться при создании клиента.",
         reply_markup=get_endpoint_settings_menu()
     )
@@ -174,7 +175,7 @@ async def start_endpoint_setup(callback: CallbackQuery, state: FSMContext):
     await edit_or_send_message(
         callback,
         f"📡 Настройка Endpoint по умолчанию\n\n"
-        f"Текущий endpoint: {endpoint_text}\n\n"
+        f"Текущий Endpoint: {endpoint_text}\n\n"
         f"Введите IP-адрес или домен сервера:\n"
         f"Примеры:\n"
         f"• vpn.example.com\n"
@@ -203,7 +204,7 @@ async def process_endpoint_setup(message: Message, state: FSMContext):
                 await message.bot.edit_message_text(
                     chat_id=user_id,
                     message_id=user_last_message[user_id],
-                    text="❌ Некорректный endpoint\n\n"
+                    text="❌ Некорректный Endpoint\n\n"
                          "Введите корректный IP-адрес или домен:\n"
                          "Примеры: 192.168.1.100, vpn.example.com",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
@@ -224,9 +225,9 @@ async def process_endpoint_setup(message: Message, state: FSMContext):
                     chat_id=user_id,
                     message_id=user_last_message[user_id],
                     text=f"✅ Endpoint по умолчанию установлен!\n\n"
-                         f"Новый endpoint: {endpoint}\n\n"
+                         f"Новый Endpoint: {endpoint}\n\n"
                          f"Теперь все новые клиенты будут автоматически использовать "
-                         f"этот endpoint. Вам больше не нужно будет вводить его при создании клиентов.",
+                         f"этот Endpoint. Вам больше не нужно будет вводить его при создании клиентов.",
                     reply_markup=get_endpoint_settings_menu()
                 )
             except:
@@ -248,9 +249,9 @@ async def clear_endpoint_confirm(callback: CallbackQuery):
         await edit_or_send_message(
             callback,
             f"📡 Очистка Endpoint по умолчанию\n\n"
-            f"Текущий endpoint: {current_endpoint}\n\n"
+            f"Текущий Endpoint: {current_endpoint}\n\n"
             f"После очистки при создании новых клиентов "
-            f"вам снова нужно будет вводить endpoint вручную.\n\n"
+            f"вам снова нужно будет вводить Endpoint вручную.\n\n"
             f"Подтвердите действие:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
@@ -275,13 +276,13 @@ async def confirm_clear_endpoint(callback: CallbackQuery):
             callback,
             "✅ Endpoint по умолчанию очищен!\n\n"
             "Теперь при создании новых клиентов вам снова нужно будет "
-            "вводить endpoint вручную.",
+            "вводить Endpoint вручную.",
             reply_markup=get_endpoint_settings_menu()
         )
     else:
         await edit_or_send_message(
             callback,
-            "❌ Ошибка при очистке endpoint",
+            "❌ Ошибка при очистке Endpoint",
             reply_markup=get_endpoint_settings_menu()
         )
     await callback.answer()
@@ -531,22 +532,39 @@ async def process_client_name(message: Message, state: FSMContext):
     await state.update_data(name=name)
     
     state_data = await state.get_data()
-    if 'endpoint' in state_data:
+
+    if config.ipv6_enabled and config.server_ipv6_subnet:
         if user_id in user_last_message:
             try:
                 await message.bot.edit_message_text(
                     chat_id=user_id,
                     message_id=user_last_message[user_id],
-                    text=f"➕ Добавление нового клиента\n\n"
-                         f"✅ Имя: {name}\n"
-                         f"✅ Endpoint: {state_data['endpoint']} (из настроек)\n\n"
-                         f"Выберите срок действия:",
+                    text="➕ Добавление нового клиента\n\n"
+                         "Добавить IPv6?\n\n",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Да", callback_data="ipv6yes")],
+                        [InlineKeyboardButton(text="❌ Нет", callback_data="ipv6no")],
+                        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_addclient")]
+                    ])
+                )
+            except Exception:
+                pass
+        await state.set_state(ClientStates.waiting_ipv6_choice)
+        return
+
+    if "endpoint" in state_data:
+        if user_id in user_last_message:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=user_last_message[user_id],
+                    text=f"<b>{name}</b>\nEndpoint: <code>{state_data['endpoint']}</code>",
                     reply_markup=get_time_limit_keyboard()
                 )
-            except:
+            except Exception:
                 pass
         return
-    
+
     if user_id in user_last_message:
         try:
             await message.bot.edit_message_text(
@@ -554,7 +572,7 @@ async def process_client_name(message: Message, state: FSMContext):
                 message_id=user_last_message[user_id],
                 text=f"➕ Добавление нового клиента\n\n"
                      f"✅ Имя клиента: {name}\n\n"
-                     f"Введите endpoint сервера:",
+                     f"Введите endpoint (IP-адрес или домен сервера):",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                     InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_add_client")
                 ]])
@@ -563,6 +581,43 @@ async def process_client_name(message: Message, state: FSMContext):
             pass
     
     await state.set_state(ClientStates.waiting_endpoint)
+
+@admin_router.callback_query(F.data.in_({"ipv6yes", "ipv6no"}), StateFilter(ClientStates.waiting_ipv6_choice))
+async def process_ipv6_choice(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора IPv6"""
+    has_ipv6 = callback.data == "ipv6yes"
+    await state.update_data(has_ipv6=has_ipv6)
+    
+    state_data = await state.get_data()
+    name = state_data.get("name")
+    
+    # Получаем endpoint из state_data
+    endpoint = state_data.get("endpoint")
+    
+    # Если endpoint уже задан в настройках по умолчанию
+    if endpoint:
+        await edit_or_send_message(
+            callback,
+            f"➕ Добавление нового клиента\n\n"
+            f"✅ Имя: {name}\n"
+            f"✅ Endpoint: {endpoint}\n\n"
+            f"Выберите срок действия:",
+            reply_markup=get_time_limit_keyboard()
+        )
+    else:
+        # Нужно запросить endpoint
+        await edit_or_send_message(
+            callback,
+            f"➕ Добавление нового клиента\n\n"
+            f"✅ Имя: {name}\n"
+            f"Введите Endpoint (IP-адрес или домен сервера):",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_addclient")]
+            ])
+        )
+        await state.set_state(ClientStates.waiting_endpoint)
+    
+    await callback.answer()
 
 # Обработка endpoint с динамическим сообщением
 @admin_router.message(StateFilter(ClientStates.waiting_endpoint))
@@ -584,7 +639,7 @@ async def process_client_endpoint(message: Message, state: FSMContext):
                     message_id=user_last_message[user_id],
                     text="➕ Добавление нового клиента\n\n"
                          "❌ Endpoint не может быть пустым\n\n"
-                         "Введите IP-адрес или домен сервера:",
+                         "Введите Endpoint (IP-адрес или домен сервера):",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                         InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_add_client")
                     ]])
@@ -787,8 +842,24 @@ async def process_traffic_limit(callback: CallbackQuery, state: FSMContext):
         # Генерируем ключи
         private_key, public_key, preshared_key = awg_manager.generate_keypair_with_preshared()
         
-        # Получаем свободный IP
         ip_address = await awg_manager.get_next_available_ip()
+
+        data = await state.get_data()
+
+        ipv6_address = ""
+        has_ipv6 = data.get("has_ipv6", False)
+
+        if has_ipv6 and config.ipv6_enabled:
+            ipv6_address = await awg_manager.get_next_available_ipv6()
+            if not ipv6_address:
+                await editor_send_message(
+                    callback,
+                    "❌ Не удалось получить свободный IPv6-адрес.\n\n"
+                    "Клиент будет создан только с IPv4.",
+                    reply_markup=get_clients_menu()
+                )
+                has_ipv6 = False
+
         if not ip_address:
             await edit_or_send_message(
                 callback,
@@ -806,6 +877,8 @@ async def process_traffic_limit(callback: CallbackQuery, state: FSMContext):
             private_key=private_key,
             preshared_key=preshared_key,
             ip_address=ip_address,
+            ipv6_address=ipv6_address,
+            has_ipv6=has_ipv6,
             endpoint=endpoint,
             expires_at=expires_at,
             traffic_limit=traffic_limit,
@@ -824,15 +897,20 @@ async def process_traffic_limit(callback: CallbackQuery, state: FSMContext):
             traffic_text = "Без ограничений" if traffic_limit == "unlimited" else f"{traffic_limit} GB"
             expires_text = "Без ограничений" if client.expires_at is None else client.expires_at.strftime('%d.%m.%Y %H:%M')
             
+            ipv6_info = f"\n🌐 IPv6: {client.ipv6_address}" if client.has_ipv6 and client.ipv6_address else ""
+
             await edit_or_send_message(
                 callback,
                 f"✅ Клиент успешно создан!\n\n"
                 f"👤 Имя: {client.name}\n"
-                f"🌐 IP: {client.ip_address}\n"
-                f"🔐 Preshared Key: Включен\n\n" 
-                f"Конфигурация готова к использованию.",
+                f"📡 IP: {client.ip_address}{ipv6_info}\n"
+                f"🔐 Preshared Key добавлен\n"
+                f"⏱ Срок действия: {expires_text}\n"
+                f"📊 Трафик: {traffic_text}\n\n"
+                f"✅ Клиент добавлен на сервер.",
                 reply_markup=get_client_details_keyboard(client.id)
             )
+
         else:
             # Удаляем из базы если не удалось добавить на сервер
             await db.delete_client(client_id)
@@ -1093,7 +1171,7 @@ async def send_client_qr(callback: CallbackQuery):
             chat_id=user_id,
             photo=qr_image,
             caption=f"📱 QR-код для клиента {client.name}\n\n"
-                   "Отсканируйте этот код в приложении AmneziaVPN",
+                   "Отсканируйте этот код в приложении AmneziaWG",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="🔙 Назад к клиенту", callback_data=f"client_details:{client_id}")
             ]])
@@ -1215,17 +1293,17 @@ async def show_client_stats(callback: CallbackQuery):
     client_stats = stats.get(client.public_key, {})
     
     if not client_stats:
-        stats_text = f"📊 Статистика клиента {client.name}\n\n❌ Статистика недоступна"
+        stats_text = f"👤 Статистика клиента {client.name}\n\n❌ Статистика недоступна"
     else:
         rx_bytes = client_stats.get('transfer', '0 B, 0 B').split(', ')[0]
         tx_bytes = client_stats.get('transfer', '0 B, 0 B').split(', ')[1]
         last_handshake = client_stats.get('latest handshake', 'Никогда')
         
-        stats_text = f"""📊 Статистика клиента {client.name}
+        stats_text = f"""👤 Статистика клиента {client.name}
 
 📥 Получено: {rx_bytes}
 📤 Отправлено: {tx_bytes}  
-🤝 Последнее подключение: {last_handshake}
+🤝 Последнее подключение: {last_handshake}\n
 📊 Использовано трафика: {format_traffic_size(client.traffic_used)}
 📈 Лимит трафика: {'Без ограничений' if not client.traffic_limit or client.traffic_limit == 'unlimited' else format_traffic_size(client.traffic_limit)}"""
     
@@ -1575,8 +1653,8 @@ async def edit_client_endpoint(callback: CallbackQuery, state: FSMContext):
     await state.update_data(edit_client_id=client_id)
     await edit_or_send_message(
         callback,
-        f"📡 Изменение endpoint клиента\n\n"
-        f"Текущий endpoint: {client.endpoint}\n\n"
+        f"📡 Изменение Endpoint клиента\n\n"
+        f"Текущий Endpoint: {client.endpoint}\n\n"
         f"Введите новый IP-адрес или домен сервера:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="🔙 Отмена", callback_data=f"edit_client:{client_id}")
@@ -1607,7 +1685,7 @@ async def process_new_client_endpoint(message: Message, state: FSMContext):
                 await message.bot.edit_message_text(
                     chat_id=user_id,
                     message_id=user_last_message[user_id],
-                    text="📡 Изменение endpoint клиента\n\n"
+                    text="📡 Изменение Endpoint клиента\n\n"
                          "❌ Endpoint не может быть пустым\n\n"
                          "Введите IP-адрес или домен сервера:",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
@@ -1631,8 +1709,8 @@ async def process_new_client_endpoint(message: Message, state: FSMContext):
                     chat_id=user_id,
                     message_id=user_last_message[user_id],
                     text=f"✅ Endpoint клиента изменен\n\n"
-                         f"Старый endpoint: {old_endpoint}\n"
-                         f"Новый endpoint: {new_endpoint}\n\n"
+                         f"Старый Endpoint: {old_endpoint}\n"
+                         f"Новый Endpoint: {new_endpoint}\n\n"
                          f"⚠️ Клиенту потребуется новая конфигурация!",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                         InlineKeyboardButton(text="🔙 К клиенту", callback_data=f"client_details:{client_id}")
@@ -1646,7 +1724,7 @@ async def process_new_client_endpoint(message: Message, state: FSMContext):
                 await message.bot.edit_message_text(
                     chat_id=user_id,
                     message_id=user_last_message[user_id],
-                    text="❌ Ошибка при изменении endpoint клиента",
+                    text="❌ Ошибка при изменении Endpoint клиента",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                         InlineKeyboardButton(text="🔙 К клиенту", callback_data=f"client_details:{client_id}")
                     ]])

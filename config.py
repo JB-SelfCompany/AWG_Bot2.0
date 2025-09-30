@@ -16,6 +16,9 @@ class Config:
     server_ip: str = "10.10.0.1"
     server_port: int = 52820
     server_subnet: str = "10.10.0.0/24"
+    server_ipv6: str = None 
+    server_ipv6_subnet: str = None 
+    ipv6_enabled: bool = False
     
     # Базы данных
     database_path: str = "./clients.db"
@@ -31,7 +34,7 @@ class Config:
         """Инициализация после создания объекта"""
         if self.admin_ids is None:
             # Укажите ваши Telegram ID администраторов
-            self.admin_ids = [12345678,123123133]  # Замените на ваши ID
+            self.admin_ids = [12345678,123123133]
         
         # Создание директорий если не существуют
         os.makedirs(self.awg_config_dir, exist_ok=True)

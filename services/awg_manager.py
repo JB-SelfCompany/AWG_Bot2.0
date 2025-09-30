@@ -305,13 +305,74 @@ class AWGManager:
             self.logger.error(f"Ошибка при поиске IP: {e}")
             return None
 
+    async def get_next_available_ipv6(self) -> Optional[str]:
+        """Получить следующий доступный IPv6-адрес (начиная с ::2)"""
+        if not self.config.server_ipv6_subnet:
+            self.logger.warning("IPv6 подсеть не настроена")
+            return None
+        
+        self.logger.info("Поиск свободного IPv6-адреса")
+        try:
+            import ipaddress
+            network = ipaddress.IPv6Network(self.config.server_ipv6_subnet)
+            self.logger.debug(f"IPv6 подсеть сервера: {network}")
+            
+            # Собираем занятые IPv6 адреса
+            used_ipv6s = set()
+            clients = await self.db.get_all_clients()
+            
+            for client in clients:
+                if client.ipv6_address:
+                    used_ipv6s.add(client.ipv6_address)
+            
+            # Добавляем адрес сервера если он задан
+            if self.config.server_ipv6:
+                used_ipv6s.add(self.config.server_ipv6)
+            
+            # Также резервируем ::1 (обычно используется сервером)
+            network_first = str(network.network_address)
+            if '::' in network_first:
+                # Формируем адрес ::1 для данной подсети
+                reserved_ip = network_first.replace('::', '::1').rstrip('/').split('/')[0]
+                used_ipv6s.add(reserved_ip)
+            
+            self.logger.debug(f"Занятые IPv6: {sorted(used_ipv6s)}")
+            
+            # Начинаем перебор со второго адреса (пропускаем ::0 и ::1)
+            host_iterator = network.hosts()
+            
+            # Пропускаем первый адрес (::1)
+            try:
+                next(host_iterator)
+            except StopIteration:
+                self.logger.error("IPv6 подсеть слишком маленькая")
+                return None
+            
+            # Ищем свободный адрес начиная с ::2
+            for ip in host_iterator:
+                ip_str = str(ip)
+                if ip_str not in used_ipv6s:
+                    self.logger.info(f"Найден свободный IPv6: {ip_str}")
+                    return ip_str
+            
+            self.logger.error("Нет свободных IPv6-адресов")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Ошибка при поиске IPv6: {e}")
+            return None
+
     async def add_peer_to_server(self, client: Client) -> bool:
         try:
+            allowed_ips = f"{client.ip_address}/32"
+            if client.has_ipv6 and client.ipv6_address:
+                allowed_ips += f", {client.ipv6_address}/128"
+            
             process = await asyncio.create_subprocess_exec(
                 'awg', 'set', self.config.awg_interface,
                 'peer', client.public_key,
                 'preshared-key', '/dev/stdin',
-                'allowed-ips', f"{client.ip_address}/32",
+                'allowed-ips', allowed_ips,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
@@ -320,24 +381,25 @@ class AWGManager:
             stdout, stderr = await process.communicate(input=client.preshared_key.encode())
             
             if process.returncode == 0:
-                self.logger.info("Клиент добавлен на сервер")
+                self.logger.info(f"Клиент добавлен на сервер с AllowedIPs: {allowed_ips}")
                 await self.save_server_config()
                 return True
             
+            # Пробуем с sudo
             sudo_process = await asyncio.create_subprocess_exec(
                 'sudo', 'awg', 'set', self.config.awg_interface,
                 'peer', client.public_key,
                 'preshared-key', '/dev/stdin',
-                'allowed-ips', f"{client.ip_address}/32",
+                'allowed-ips', allowed_ips,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             
-            stdout, stderr = await process.communicate(input=client.preshared_key.encode())
+            sudo_stdout, sudo_stderr = await sudo_process.communicate(input=client.preshared_key.encode())
             
             if sudo_process.returncode == 0:
-                self.logger.info("Клиент добавлен на сервер с sudo")
+                self.logger.info(f"Клиент добавлен на сервер с sudo, AllowedIPs: {allowed_ips}")
                 await self.save_server_config()
                 return True
             else:
@@ -379,10 +441,15 @@ class AWGManager:
 
     async def add_peer_normal(self, client: Client) -> bool:
         self.logger.debug("Попытка добавления пира без sudo")
+
+        allowed_ips = f"{client.ip_address}/32"
+        if client.has_ipv6 and client.ipv6_address:
+            allowed_ips += f", {client.ipv6_address}/128"
+
         process = await asyncio.create_subprocess_exec(
             'awg', 'set', self.config.awg_interface,
             'peer', client.public_key,
-            'allowed-ips', f"{client.ip_address}/32",
+            'allowed-ips', allowed_ips,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -399,10 +466,15 @@ class AWGManager:
     async def add_peer_sudo(self, client: Client) -> bool:
         """Добавить пира с sudo"""
         self.logger.debug("Попытка добавления пира с sudo")
+
+        allowed_ips = f"{client.ip_address}/32"
+        if client.has_ipv6 and client.ipv6_address:
+            allowed_ips += f", {client.ipv6_address}/128"
+
         process = await asyncio.create_subprocess_exec(
             'sudo', 'awg', 'set', self.config.awg_interface,
             'peer', client.public_key,
-            'allowed-ips', f"{client.ip_address}/32",
+            'allowed-ips', allowed_ips,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -432,13 +504,17 @@ class AWGManager:
                 self.logger.error("Не удалось получить параметры Amnezia, используем обычный WireGuard")
                 raise Exception("Ошибка получения параметров Amnezia")
             
+            address_line = f"Address = {client.ip_address}/32"
+            if client.has_ipv6 and client.ipv6_address:
+                address_line += f", {client.ipv6_address}/128"
+
             config_lines = [
                 "[Interface]",
                 f"PrivateKey = {client.private_key}",
-                f"Address = {client.ip_address}/32",
+                address_line,
                 f"DNS = {dns_servers}"
             ]
-            
+
             if additional_params:
                 for param_name, param_value in additional_params.items():
                     config_lines.append(f"{param_name} = {param_value}")
@@ -446,17 +522,20 @@ class AWGManager:
             else:
                 self.logger.info("Используются стандартные параметры WireGuard")
             
-            config_lines.append("")
+            allowed_ips_line = "AllowedIPs = 0.0.0.0/0"
+            if client.has_ipv6 and client.ipv6_address:
+                allowed_ips_line += ", ::/0"
+
             config_lines.extend([
                 "",
                 "[Peer]",
                 f"PublicKey = {server_public_key}",
                 f"PresharedKey = {client.preshared_key}",
-                "AllowedIPs = 0.0.0.0/0",
+                allowed_ips_line,
                 f"Endpoint = {client.endpoint}:{self.config.server_port}",
                 "PersistentKeepalive = 25"
             ])
-            
+
             return '\n'.join(config_lines)
             self.logger.debug("Конфигурация создана успешно")
             return config

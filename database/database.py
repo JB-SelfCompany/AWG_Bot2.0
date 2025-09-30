@@ -13,6 +13,8 @@ class Client:
     private_key: str = ""
     preshared_key: str = ""
     ip_address: str = ""
+    ipv6_address: str = ""
+    has_ipv6: bool = False
     endpoint: str = ""
     created_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
@@ -75,20 +77,15 @@ class Database:
             """)
             
             try:
-                await db.execute("ALTER TABLE clients ADD COLUMN preshared_key TEXT DEFAULT ''")
+                await db.execute("ALTER TABLE clients ADD COLUMN ipv6_address TEXT DEFAULT ''")
             except:
                 pass
 
             try:
-                await db.execute("ALTER TABLE clients ADD COLUMN last_ip TEXT DEFAULT ''")
+                await db.execute("ALTER TABLE clients ADD COLUMN has_ipv6 BOOLEAN DEFAULT 0")
             except:
                 pass
-                
-            try:
-                await db.execute("ALTER TABLE clients ADD COLUMN daily_ips TEXT DEFAULT ''")
-            except:
-                pass
-            
+    
             await db.execute("""
             CREATE TABLE IF NOT EXISTS client_ip_connections (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -176,13 +173,14 @@ class Database:
         """Добавление нового клиента"""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
-            INSERT INTO clients (name, public_key, private_key, preshared_key, ip_address,
-                               endpoint, expires_at, traffic_limit, is_active, is_blocked,
-                               last_ip, daily_ips)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO clients (name, public_key, private_key, preshared_key, ip_address,
+                                    ipv6_address, has_ipv6, endpoint, expires_at, traffic_limit, 
+                                    is_active, is_blocked, last_ip, daily_ips)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 client.name, client.public_key, client.private_key,
-                client.preshared_key, client.ip_address, client.endpoint, client.expires_at,
+                client.preshared_key, client.ip_address, client.ipv6_address,
+                client.has_ipv6, client.endpoint, client.expires_at,
                 client.traffic_limit, client.is_active, client.is_blocked,
                 client.last_ip, client.daily_ips
             ))
@@ -221,16 +219,18 @@ class Database:
         """Обновление клиента"""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
-            UPDATE clients SET name = ?, endpoint = ?, expires_at = ?,
-                             traffic_limit = ?, traffic_used = ?,
-                             is_active = ?, is_blocked = ?,
-                             last_ip = ?, daily_ips = ?
-            WHERE id = ?
+                UPDATE clients SET name = ?, endpoint = ?, expires_at = ?,
+                                traffic_limit = ?, traffic_used = ?,
+                                is_active = ?, is_blocked = ?,
+                                last_ip = ?, daily_ips = ?,
+                                ipv6_address = ?, has_ipv6 = ?
+                WHERE id = ?
             """, (
                 client.name, client.endpoint, client.expires_at,
                 client.traffic_limit, client.traffic_used,
-                client.is_active, client.is_blocked, 
-                client.last_ip, client.daily_ips, client.id
+                client.is_active, client.is_blocked,
+                client.last_ip, client.daily_ips,
+                client.ipv6_address, client.has_ipv6, client.id
             ))
             await db.commit()
             return cursor.rowcount > 0
@@ -328,9 +328,13 @@ class Database:
         
         last_ip = ""
         daily_ips = ""
+        ipv6_address = ""
+        has_ipv6 = False
         try:
             last_ip = row["last_ip"] or ""
             daily_ips = row["daily_ips"] or ""
+            ipv6_address = row["ipv6_address"] or ""
+            has_ipv6 = bool(row["has_ipv6"])
         except (IndexError, KeyError):
             pass
 
@@ -341,6 +345,8 @@ class Database:
             private_key=row["private_key"],
             preshared_key=row["preshared_key"],
             ip_address=row["ip_address"],
+            ipv6_address=ipv6_address,
+            has_ipv6=has_ipv6,
             endpoint=row["endpoint"],
             created_at=created_at,
             expires_at=expires_at,
