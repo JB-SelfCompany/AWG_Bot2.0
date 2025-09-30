@@ -20,6 +20,14 @@ Telegram бот для управления AmneziaWG VPN сервером с п
 
 ---
 
+## 📸 Скриншоты
+
+| Главное меню |  Клиент | Редактирование клиента | Статистика сервера | Резервные копии |
+|-----------------|------------------------|-------------------|-----------------|-----------------|
+| ![Menu](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image1.png) | ![Client](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image2.png) | ![Editing](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image3.png) | ![Statistic](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image4.png) | ![Backup](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image5.png) |
+
+---
+
 ## 📋 Требования
 
 - Python 3.12+
@@ -248,16 +256,6 @@ awg-quick up awg0
     ├── formatters.py   
     └── vpn_converter.py         
 ```
-
----
-
-## 📸 Скриншоты
-
-| Главное меню |  Клиент | Редактирование клиента | Статистика сервера | Резервные копии |
-|-----------------|------------------------|-------------------|-----------------|-----------------|
-| ![Menu](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image1.png) | ![Client](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image2.png) | ![Editing](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image3.png) | ![Statistic](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image4.png) | ![Backup](https://github.com/JB-SelfCompany/AWG_Bot2.0/blob/main/raw/image5.png) |
-
----
 
 ## 🔐 Безопасность
 
