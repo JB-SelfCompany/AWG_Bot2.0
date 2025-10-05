@@ -1463,47 +1463,70 @@ async def cancel_action(callback: CallbackQuery):
     )
     await callback.answer()
 
-# Статистика сервера
 @admin_router.callback_query(F.data == "stats_menu")
 async def show_stats_menu(callback: CallbackQuery):
-    """Показать статистику сервера"""
+    """Отображение статистики сервера"""
     clients = await db.get_all_clients()
     active_clients = [c for c in clients if c.is_active and not c.is_blocked]
     blocked_clients = [c for c in clients if c.is_blocked]
     
     stats = await awg_manager.get_interface_stats()
-    online_clients = len([key for key in stats.keys() if 'latest handshake' in stats[key]])
+    online_clients = len([key for key in stats.keys() if "latest handshake" in stats[key]])
+    
+    # Вычисление общего трафика всех клиентов
+    total_traffic_used = 0
+    total_traffic_limit = 0
+    clients_with_limit = 0
+    
+    for client in clients:
+        # Суммируем использованный трафик
+        if client.traffic_used:
+            total_traffic_used += client.traffic_used
+        
+        # Суммируем лимиты трафика (только для клиентов с установленным лимитом)
+        if client.traffic_limit and client.traffic_limit != "unlimited":
+            total_traffic_limit += client.traffic_limit
+            clients_with_limit += 1
     
     try:
         network = ipaddress.IPv4Network(config.server_subnet)
         total_ips = network.num_addresses - 2
         available_ips = total_ips - len(clients)
     except:
-        total_ips = "неизвестно"
-        available_ips = "неизвестно"
+        total_ips = available_ips = "—"
     
     current_time = datetime.now().strftime('%H:%M:%S')
     
-    stats_text = f"""📊 Статистика сервера (обновлено: {current_time})
-
-👥 Всего клиентов: {len(clients)}
-🟢 Активных: {len(active_clients)}
-🔴 Заблокированных: {len(blocked_clients)}
-📱 Онлайн сейчас: {online_clients}
-
-💾 Использование ресурсов:
-- Занято IP: {len(clients)} из {total_ips}
-- Свободно IP: {available_ips}
-- Активные подключения: {online_clients}"""
+    # Форматирование трафика
+    traffic_used_formatted = format_traffic_size(total_traffic_used)
+    traffic_limit_formatted = format_traffic_size(total_traffic_limit) if clients_with_limit > 0 else "—"
+    
+    stats_text = (
+        f"📊 Статистика сервера\n\n"
+        f"🕐 Время: {current_time}\n\n"
+        f"👥 Клиенты:\n"
+        f"├ 📋 Всего: {len(clients)}\n"
+        f"├ ✅ Активных: {len(active_clients)}\n"
+        f"├ 🔴 Заблокированных: {len(blocked_clients)}\n"
+        f"└ 🟢 Онлайн: {online_clients}\n\n"
+        f"🌐 IP-адреса:\n"
+        f"├ 👤 Занято: {len(clients)} / {total_ips}\n"
+        f"└ ✨ Доступно: {available_ips}\n\n"
+        f"📈 Трафик сервера:\n"
+        f"├ 📤 Использовано: {traffic_used_formatted}\n"
+        f"└ 🎯 Лимит: {traffic_limit_formatted}\n"
+        f"   💡 ({clients_with_limit} клиент{'ов' if clients_with_limit != 1 else ''})"
+    )
 
     await edit_or_send_message(
         callback,
         stats_text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="🔄 Обновить", callback_data="stats_menu"),
-            InlineKeyboardButton(text="🔙 Главное меню", callback_data="main_menu")
-        ]])
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="stats_menu")],
+            [InlineKeyboardButton(text="🔙 Главное меню", callback_data="main_menu")]
+        ])
     )
+    
     await callback.answer()
 
 # Меню резервных копий
@@ -1816,6 +1839,316 @@ async def process_new_client_endpoint(message: Message, state: FSMContext):
                 )
             except:
                 pass
+
+# Редактирование срока действия клиента
+@admin_router.callback_query(F.data.startswith("edit_expiry:"))
+async def edit_client_expiry(callback: CallbackQuery, state: FSMContext):
+    """Редактирование срока действия клиента"""
+    client_id = int(callback.data.split(":", 1)[1])
+    client = await db.get_client(client_id)
+    
+    if not client:
+        await callback.answer("❌ Клиент не найден", show_alert=True)
+        return
+    
+    await state.update_data(edit_client_id=client_id)
+    
+    expiry_text = "Без ограничений" if client.expires_at is None else client.expires_at.strftime('%d.%m.%Y %H:%M')
+    
+    await edit_or_send_message(
+        callback,
+        f"⏰ Изменение срока действия\n\n"
+        f"Клиент: {client.name}\n"
+        f"Текущий срок: {expiry_text}\n\n"
+        f"Выберите новый срок действия:",
+        reply_markup=get_time_limit_keyboard_for_edit(client_id)
+    )
+    await callback.answer()
+
+# Обработка выбора нового срока действия
+@admin_router.callback_query(F.data.startswith("edit_time_limit:"))
+async def process_edit_time_limit(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора нового срока действия"""
+    parts = callback.data.split(":", 2)
+    client_id = int(parts[1])
+    time_limit = parts[2]
+    
+    client = await db.get_client(client_id)
+    if not client:
+        await callback.answer("❌ Клиент не найден", show_alert=True)
+        return
+    
+    if time_limit == "custom":
+        await state.update_data(edit_client_id=client_id)
+        await edit_or_send_message(
+            callback,
+            "⏰ Выберите единицу времени для своего срока:",
+            reply_markup=get_custom_time_keyboard_for_edit(client_id)
+        )
+        await callback.answer()
+        return
+    
+    # Вычисляем дату окончания
+    expires_at = None
+    if time_limit != "unlimited":
+        now = datetime.now()
+        
+        if time_limit.endswith('h'):
+            hours = int(time_limit[:-1])
+            expires_at = now + timedelta(hours=hours)
+        elif time_limit.endswith('d'):
+            days = int(time_limit[:-1])
+            expires_at = now + timedelta(days=days)
+        elif time_limit.endswith('w'):
+            weeks = int(time_limit[:-1])
+            expires_at = now + timedelta(weeks=weeks)
+        elif time_limit.endswith('m'):
+            months = int(time_limit[:-1])
+            expires_at = now + timedelta(days=months * 30)
+        elif time_limit.endswith('y'):
+            years = int(time_limit[:-1])
+            expires_at = now + timedelta(days=years * 365)
+    
+    # Обновляем клиента
+    old_expiry = "Без ограничений" if client.expires_at is None else client.expires_at.strftime('%d.%m.%Y %H:%M')
+    client.expires_at = expires_at
+    success = await db.update_client(client)
+    
+    if success:
+        new_expiry = "Без ограничений" if expires_at is None else expires_at.strftime('%d.%m.%Y %H:%M')
+        await edit_or_send_message(
+            callback,
+            f"✅ Срок действия изменен\n\n"
+            f"Клиент: {client.name}\n"
+            f"Старый срок: {old_expiry}\n"
+            f"Новый срок: {new_expiry}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔙 К клиенту", callback_data=f"client_details:{client_id}")
+            ]])
+        )
+    else:
+        await edit_or_send_message(
+            callback,
+            "❌ Ошибка при изменении срока действия",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔙 К клиенту", callback_data=f"client_details:{client_id}")
+            ]])
+        )
+    
+    await callback.answer()
+
+# Обработка выбора единиц времени для редактирования
+@admin_router.callback_query(F.data.startswith("edit_custom_time_unit:"))
+async def process_edit_custom_time_unit(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора единиц времени для редактирования"""
+    parts = callback.data.split(":", 2)
+    client_id = int(parts[1])
+    time_unit = parts[2]
+    
+    await state.update_data(edit_client_id=client_id, custom_time_unit=time_unit)
+    
+    unit_names = {
+        'hours': 'часов',
+        'days': 'дней',
+        'weeks': 'недель',
+        'months': 'месяцев',
+        'years': 'лет'
+    }
+    
+    await edit_or_send_message(
+        callback,
+        f"⏰ Введите количество {unit_names.get(time_unit, time_unit)}:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔙 Отмена", callback_data=f"edit_client:{client_id}")
+        ]])
+    )
+    
+    await state.set_state(EditClientStates.waiting_edit_time_value)
+    await callback.answer()
+
+# Обработка пользовательского времени для редактирования
+@admin_router.message(StateFilter(EditClientStates.waiting_edit_time_value))
+async def process_edit_custom_time_value(message: Message, state: FSMContext):
+    """Обработка значения пользовательского времени для редактирования"""
+    user_id = message.from_user.id
+    
+    try:
+        await message.delete()
+    except:
+        pass
+    
+    try:
+        value = int(message.text.strip())
+        if value <= 0 or value > 1000:
+            raise ValueError()
+        
+        data = await state.get_data()
+        client_id = data.get('edit_client_id')
+        time_unit = data.get('custom_time_unit', 'days')
+        
+        client = await db.get_client(client_id)
+        if not client:
+            if user_id in user_last_message:
+                try:
+                    await message.bot.edit_message_text(
+                        chat_id=user_id,
+                        message_id=user_last_message[user_id],
+                        text="❌ Клиент не найден",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text="🔙 Меню клиентов", callback_data="clients_menu")
+                        ]])
+                    )
+                except:
+                    pass
+            await state.clear()
+            return
+        
+        now = datetime.now()
+        expires_at = None
+        
+        if time_unit == 'hours':
+            expires_at = now + timedelta(hours=value)
+        elif time_unit == 'days':
+            expires_at = now + timedelta(days=value)
+        elif time_unit == 'weeks':
+            expires_at = now + timedelta(weeks=value)
+        elif time_unit == 'months':
+            expires_at = now + timedelta(days=value * 30)
+        elif time_unit == 'years':
+            expires_at = now + timedelta(days=value * 365)
+        
+        old_expiry = "Без ограничений" if client.expires_at is None else client.expires_at.strftime('%d.%m.%Y %H:%M')
+        client.expires_at = expires_at
+        success = await db.update_client(client)
+        
+        await state.clear()
+        
+        if success:
+            if user_id in user_last_message:
+                try:
+                    await message.bot.edit_message_text(
+                        chat_id=user_id,
+                        message_id=user_last_message[user_id],
+                        text=f"✅ Срок действия изменен\n\n"
+                             f"Клиент: {client.name}\n"
+                             f"Старый срок: {old_expiry}\n"
+                             f"Новый срок: {expires_at.strftime('%d.%m.%Y %H:%M')}",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text="🔙 К клиенту", callback_data=f"client_details:{client_id}")
+                        ]])
+                    )
+                except:
+                    pass
+        else:
+            if user_id in user_last_message:
+                try:
+                    await message.bot.edit_message_text(
+                        chat_id=user_id,
+                        message_id=user_last_message[user_id],
+                        text="❌ Ошибка при изменении срока действия",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text="🔙 К клиенту", callback_data=f"client_details:{client_id}")
+                        ]])
+                    )
+                except:
+                    pass
+    
+    except ValueError:
+        if user_id in user_last_message:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=user_last_message[user_id],
+                    text="⏰ Ошибка!\n\n"
+                         "❌ Введите корректное число (от 1 до 1000):",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text="🔙 Отмена", callback_data="clients_menu")
+                    ]])
+                )
+            except:
+                pass
+
+# Редактирование лимита трафика
+@admin_router.callback_query(F.data.startswith("edit_traffic_limit:"))
+async def edit_client_traffic(callback: CallbackQuery, state: FSMContext):
+    """Редактирование лимита трафика клиента"""
+    client_id = int(callback.data.split(":", 1)[1])
+    client = await db.get_client(client_id)
+    
+    if not client:
+        await callback.answer("❌ Клиент не найден", show_alert=True)
+        return
+    
+    await state.update_data(edit_client_id=client_id)
+    
+    traffic_text = "Без ограничений"
+    if client.traffic_limit and client.traffic_limit != "unlimited":
+        traffic_gb = client.traffic_limit / (1024 * 1024 * 1024)
+        traffic_text = f"{traffic_gb:.0f} GB"
+    
+    await edit_or_send_message(
+        callback,
+        f"📊 Изменение лимита трафика\n\n"
+        f"Клиент: {client.name}\n"
+        f"Текущий лимит: {traffic_text}\n\n"
+        f"Выберите новый лимит трафика:",
+        reply_markup=get_traffic_limit_keyboard_for_edit(client_id)
+    )
+    await callback.answer()
+
+# Обработка выбора нового лимита трафика
+@admin_router.callback_query(F.data.startswith("edit_traffic_value:"))
+async def process_edit_traffic_limit(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора нового лимита трафика"""
+    parts = callback.data.split(":", 2)
+    client_id = int(parts[1])
+    traffic_limit = parts[2]
+    
+    client = await db.get_client(client_id)
+    if not client:
+        await callback.answer("❌ Клиент не найден", show_alert=True)
+        return
+    
+    # Конвертируем в байты
+    traffic_limit_bytes = None
+    if traffic_limit != "unlimited":
+        gb_limit = int(traffic_limit)
+        traffic_limit_bytes = gb_limit * 1024 * 1024 * 1024
+    
+    # Сохраняем старое значение для отображения
+    old_traffic = "Без ограничений"
+    if client.traffic_limit and client.traffic_limit != "unlimited":
+        old_traffic_gb = client.traffic_limit / (1024 * 1024 * 1024)
+        old_traffic = f"{old_traffic_gb:.0f} GB"
+    
+    # Обновляем клиента
+    client.traffic_limit = traffic_limit_bytes
+    success = await db.update_client(client)
+    
+    await state.clear()
+    
+    if success:
+        new_traffic = "Без ограничений" if traffic_limit == "unlimited" else f"{traffic_limit} GB"
+        await edit_or_send_message(
+            callback,
+            f"✅ Лимит трафика изменен\n\n"
+            f"Клиент: {client.name}\n"
+            f"Старый лимит: {old_traffic}\n"
+            f"Новый лимит: {new_traffic}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔙 К клиенту", callback_data=f"client_details:{client_id}")
+            ]])
+        )
+    else:
+        await edit_or_send_message(
+            callback,
+            "❌ Ошибка при изменении лимита трафика",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔙 К клиенту", callback_data=f"client_details:{client_id}")
+            ]])
+        )
+    
+    await callback.answer()
 
 # Перегенерация ключей
 @admin_router.callback_query(F.data.startswith("regenerate_keys:"))

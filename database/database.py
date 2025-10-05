@@ -211,7 +211,7 @@ class Database:
         """Получение всех клиентов"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM clients ORDER BY created_at DESC")
+            cursor = await db.execute("SELECT * FROM clients ORDER BY name COLLATE NOCASE ASC")
             rows = await cursor.fetchall()
             return [self._row_to_client(row) for row in rows]
 

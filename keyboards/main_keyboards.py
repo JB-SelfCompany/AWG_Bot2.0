@@ -339,25 +339,109 @@ def get_edit_client_keyboard(client_id: int) -> InlineKeyboardMarkup:
         text="📝 Изменить имя",
         callback_data=f"edit_name:{client_id}"
     ))
+    
     builder.add(InlineKeyboardButton(
         text="📡 Изменить Endpoint",
         callback_data=f"edit_endpoint:{client_id}"
     ))
+    
     builder.add(InlineKeyboardButton(
         text="⏰ Изменить срок действия",
-        callback_data=f"edit_time:{client_id}"
+        callback_data=f"edit_expiry:{client_id}"
     ))
+    
     builder.add(InlineKeyboardButton(
-        text="📊 Изменить лимит трафика", 
-        callback_data=f"edit_traffic:{client_id}"
+        text="📊 Изменить лимит трафика",
+        callback_data=f"edit_traffic_limit:{client_id}"
     ))
+    
     builder.add(InlineKeyboardButton(
         text="🔄 Перегенерировать ключи",
         callback_data=f"regenerate_keys:{client_id}"
     ))
+    
     builder.add(InlineKeyboardButton(
         text="🔙 Назад к клиенту",
         callback_data=f"client_details:{client_id}"
+    ))
+    
+    builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+def get_time_limit_keyboard_for_edit(client_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура выбора временного ограничения для редактирования"""
+    builder = InlineKeyboardBuilder()
+    
+    # Часы
+    builder.add(InlineKeyboardButton(text="⏱️ 1 час", callback_data=f"edit_time_limit:{client_id}:1h"))
+    builder.add(InlineKeyboardButton(text="⏱️ 6 часов", callback_data=f"edit_time_limit:{client_id}:6h"))
+    builder.add(InlineKeyboardButton(text="⏱️ 12 часов", callback_data=f"edit_time_limit:{client_id}:12h"))
+    
+    # Дни
+    builder.add(InlineKeyboardButton(text="📅 1 день", callback_data=f"edit_time_limit:{client_id}:1d"))
+    builder.add(InlineKeyboardButton(text="📅 3 дня", callback_data=f"edit_time_limit:{client_id}:3d"))
+    builder.add(InlineKeyboardButton(text="📅 7 дней", callback_data=f"edit_time_limit:{client_id}:7d"))
+    
+    # Недели
+    builder.add(InlineKeyboardButton(text="🗓️ 2 недели", callback_data=f"edit_time_limit:{client_id}:2w"))
+    builder.add(InlineKeyboardButton(text="🗓️ 1 месяц", callback_data=f"edit_time_limit:{client_id}:1m"))
+    
+    # Месяцы и годы
+    builder.add(InlineKeyboardButton(text="📆 3 месяца", callback_data=f"edit_time_limit:{client_id}:3m"))
+    builder.add(InlineKeyboardButton(text="📆 6 месяцев", callback_data=f"edit_time_limit:{client_id}:6m"))
+    builder.add(InlineKeyboardButton(text="📆 1 год", callback_data=f"edit_time_limit:{client_id}:1y"))
+    
+    builder.add(InlineKeyboardButton(text="⏰ Свой срок", callback_data=f"edit_time_limit:{client_id}:custom"))
+    builder.add(InlineKeyboardButton(text="♾️ Без ограничений", callback_data=f"edit_time_limit:{client_id}:unlimited"))
+    
+    builder.add(InlineKeyboardButton(text="🔙 Отмена", callback_data=f"edit_client:{client_id}"))
+    
+    builder.adjust(3, 3, 2, 2, 1, 1, 1)
+    return builder.as_markup()
+
+def get_custom_time_keyboard_for_edit(client_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора единиц времени при редактировании"""
+    builder = InlineKeyboardBuilder()
+    
+    builder.add(InlineKeyboardButton(text="⏱️ В часах", callback_data=f"edit_custom_time_unit:{client_id}:hours"))
+    builder.add(InlineKeyboardButton(text="📅 В днях", callback_data=f"edit_custom_time_unit:{client_id}:days"))
+    builder.add(InlineKeyboardButton(text="🗓️ В неделях", callback_data=f"edit_custom_time_unit:{client_id}:weeks"))
+    builder.add(InlineKeyboardButton(text="📆 В месяцах", callback_data=f"edit_custom_time_unit:{client_id}:months"))
+    builder.add(InlineKeyboardButton(text="🗓️ В годах", callback_data=f"edit_custom_time_unit:{client_id}:years"))
+    
+    builder.add(InlineKeyboardButton(text="🔙 Назад", callback_data=f"edit_expiry:{client_id}"))
+    
+    builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+def get_traffic_limit_keyboard_for_edit(client_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура выбора ограничения трафика для редактирования"""
+    builder = InlineKeyboardBuilder()
+    
+    builder.add(InlineKeyboardButton(
+        text="📊 5 GB",
+        callback_data=f"edit_traffic_value:{client_id}:5"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="📊 10 GB",
+        callback_data=f"edit_traffic_value:{client_id}:10"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="📊 30 GB",
+        callback_data=f"edit_traffic_value:{client_id}:30"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="📊 100 GB",
+        callback_data=f"edit_traffic_value:{client_id}:100"
+    ))
+    builder.add(InlineKeyboardButton(
+        text="♾️ Без ограничений",
+        callback_data=f"edit_traffic_value:{client_id}:unlimited"
+    ))
+    
+    builder.add(InlineKeyboardButton(
+        text="🔙 Отмена",
+        callback_data=f"edit_client:{client_id}"
     ))
     
     builder.adjust(2, 2, 1, 1)
