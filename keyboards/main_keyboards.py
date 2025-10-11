@@ -96,22 +96,22 @@ def get_clients_menu() -> InlineKeyboardMarkup:
 def get_client_list_keyboard(clients: List[Client], page: int = 0, per_page: int = 10) -> InlineKeyboardMarkup:
     """Клавиатура со списком клиентов с улучшенной пагинацией"""
     builder = InlineKeyboardBuilder()
-    
+
     start_idx = page * per_page
     end_idx = start_idx + per_page
     page_clients = clients[start_idx:end_idx]
-    
+
     for client in page_clients:
         status_emoji = "🟢" if client.is_active and not client.is_blocked else "🔴"
         builder.add(InlineKeyboardButton(
             text=f"{status_emoji} {client.name}",
             callback_data=f"client_details:{client.id}"
         ))
-    
+
     # Навигация по страницам
     nav_buttons = []
     total_pages = (len(clients) - 1) // per_page + 1
-    
+
     if page > 0:
         nav_buttons.append(InlineKeyboardButton(
             text="⏪ Первая",
@@ -121,17 +121,17 @@ def get_client_list_keyboard(clients: List[Client], page: int = 0, per_page: int
             text="◀️ Назад",
             callback_data=f"clients_page:{page-1}"
         ))
-    
+
     if page < total_pages - 1:
         nav_buttons.append(InlineKeyboardButton(
-            text="Вперед ▶️", 
+            text="Вперед ▶️",
             callback_data=f"clients_page:{page+1}"
         ))
         nav_buttons.append(InlineKeyboardButton(
             text="Последняя ⏩",
             callback_data=f"clients_page:{total_pages-1}"
         ))
-    
+
     if len(nav_buttons) == 2:
         builder.row(nav_buttons[0], nav_buttons[1])
     elif len(nav_buttons) == 4:
@@ -139,18 +139,12 @@ def get_client_list_keyboard(clients: List[Client], page: int = 0, per_page: int
         builder.row(nav_buttons[2], nav_buttons[3])
     elif len(nav_buttons) > 0:
         builder.row(*nav_buttons)
-    
-    if total_pages > 1:
-        builder.add(InlineKeyboardButton(
-            text=f"📄 {page + 1}/{total_pages}",
-            callback_data="noop"
-        ))
-    
+
     builder.add(InlineKeyboardButton(
         text="🔙 Меню клиентов",
         callback_data="clients_menu"
     ))
-    
+
     builder.adjust(1)
     return builder.as_markup()
 
