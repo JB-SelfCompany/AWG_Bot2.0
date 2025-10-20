@@ -529,7 +529,7 @@ sudo systemctl enable awg-quick@awg0
 
 ### База данных
 
-Реализованы следующие оптимизации SQLite[file:25]:
+Реализованы следующие оптимизации SQLite:
 
 #### Connection Pooling
 - Пул из 5 переиспользуемых соединений
