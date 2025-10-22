@@ -1,4 +1,6 @@
-# AmneziaWG Management Bot
+# <div align="center"> AmneziaWG Management Bot
+
+<div align="center">
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue?logo=python)](https://www.python.org/)
@@ -7,7 +9,9 @@
 
 Профессиональный Telegram бот для управления AmneziaWG VPN сервером с полным функционалом администрирования, мониторинга и автоматизации.
 
-> **⚠️ Важно:** Для работы бота требуются root-права и установленный AmneziaWG.
+**⚠️ Важно:** Для работы бота требуются root-права и установленный AmneziaWG.
+
+</div>
 
 ---
 
@@ -875,6 +879,6 @@ grep ERROR bot.log
 
 ⭐ Если проект вам помог, поставьте звезду на GitHub!
 
-[Наверх](#amneziawg-management-bot) | [Лицензия](#-лицензия) | [Вклад](#-вклад-в-проект)
+[Наверх](#amneziawg-management-bot)
 
 </div>
