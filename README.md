@@ -203,10 +203,9 @@ sudo apt update && sudo apt upgrade -y
 
 Установка необходимых зависимостей
 ```bash
-sudo apt install -y make build-essential libssl-dev zlib1g-dev
-libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm
-libncurses-dev xz-utils tk-dev libffi-dev liblzma-dev
-python3-openssl git
+sudo apt install -y make build-essential libssl-dev zlib1g-dev \
+libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
+libncurses-dev xz-utils tk-dev libffi-dev liblzma-dev python3-openssl git
 ```
 ---
 
