@@ -325,8 +325,6 @@ sudo nano /etc/systemd/system/awg_bot.service
 ```bash
 [Unit]
 Description=AmneziaWG Telegram Management Bot
-After=network.target amneziawg-quick@awg0.service
-Requires=amneziawg-quick@awg0.service
 
 [Service]
 Type=simple
