@@ -330,7 +330,6 @@ Description=AmneziaWG Telegram Management Bot
 Type=simple
 User=root
 WorkingDirectory=/path/to/AWG_Bot2.0
-Environment="PATH=/root/.pyenv/versions/awg_bot_env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/root/.pyenv/versions/awg_bot_env/bin/python main.py
 Restart=always
 RestartSec=10
