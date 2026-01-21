@@ -1,7 +1,71 @@
+import re
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from typing import List, Optional
+from typing import List, Optional, Dict
 from database.database import Client
+
+
+def parse_handshake_to_days(handshake_str: str) -> Optional[float]:
+    """
+    Парсит строку latest handshake и возвращает количество дней.
+    Примеры: "2 minutes, 30 seconds ago", "1 hour, 5 minutes ago", "3 days, 2 hours ago"
+    Возвращает None если никогда не подключался или ошибка парсинга.
+    """
+    if not handshake_str or handshake_str.lower() in ('never', 'никогда', ''):
+        return None
+
+    total_seconds = 0
+
+    # Ищем все числа с единицами времени
+    patterns = [
+        (r'(\d+)\s*(?:second|секунд)', 1),
+        (r'(\d+)\s*(?:minute|минут)', 60),
+        (r'(\d+)\s*(?:hour|час)', 3600),
+        (r'(\d+)\s*(?:day|д[нея])', 86400),
+        (r'(\d+)\s*(?:week|недел)', 604800),
+        (r'(\d+)\s*(?:month|месяц)', 2592000),
+        (r'(\d+)\s*(?:year|год|лет)', 31536000),
+    ]
+
+    for pattern, multiplier in patterns:
+        match = re.search(pattern, handshake_str, re.IGNORECASE)
+        if match:
+            total_seconds += int(match.group(1)) * multiplier
+
+    if total_seconds == 0:
+        return None
+
+    return total_seconds / 86400  # конвертируем в дни
+
+
+def get_activity_emoji(client: Client, client_stats: Optional[Dict] = None) -> str:
+    """
+    Возвращает эмодзи на основе активности клиента:
+    🔴 - заблокирован или неактивен
+    🟢 - подключался в последние 7 дней
+    🟡 - подключался от 7 до 14 дней назад
+    🟠 - подключался более 14 дней назад
+    ⚪ - никогда не подключался
+    """
+    # Заблокированные клиенты
+    if not client.is_active or client.is_blocked:
+        return "🔴"
+
+    # Если нет статистики - показываем как никогда не подключавшегося
+    if not client_stats:
+        return "⚪"
+
+    handshake_str = client_stats.get('latest handshake', '')
+    days = parse_handshake_to_days(handshake_str)
+
+    if days is None:
+        return "⚪"  # никогда не подключался
+    elif days <= 7:
+        return "🟢"  # активен (до 7 дней)
+    elif days <= 14:
+        return "🟡"  # средняя активность (7-14 дней)
+    else:
+        return "🟠"  # давно не подключался (более 14 дней)
 
 def get_main_menu() -> InlineKeyboardMarkup:
     """Главное меню бота"""
@@ -93,16 +157,32 @@ def get_clients_menu() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-def get_client_list_keyboard(clients: List[Client], page: int = 0, per_page: int = 10) -> InlineKeyboardMarkup:
-    """Клавиатура со списком клиентов с улучшенной пагинацией"""
+def get_client_list_keyboard(
+    clients: List[Client],
+    page: int = 0,
+    per_page: int = 10,
+    stats: Optional[Dict[str, Dict]] = None
+) -> InlineKeyboardMarkup:
+    """
+    Клавиатура со списком клиентов с улучшенной пагинацией.
+
+    Эмодзи активности:
+    🔴 - заблокирован или неактивен
+    🟢 - подключался в последние 7 дней
+    🟡 - подключался от 7 до 14 дней назад
+    🟠 - подключался более 14 дней назад
+    ⚪ - никогда не подключался
+    """
     builder = InlineKeyboardBuilder()
+    stats = stats or {}
 
     start_idx = page * per_page
     end_idx = start_idx + per_page
     page_clients = clients[start_idx:end_idx]
 
     for client in page_clients:
-        status_emoji = "🟢" if client.is_active and not client.is_blocked else "🔴"
+        client_stats = stats.get(client.public_key)
+        status_emoji = get_activity_emoji(client, client_stats)
         builder.add(InlineKeyboardButton(
             text=f"{status_emoji} {client.name}",
             callback_data=f"client_details:{client.id}"

@@ -78,9 +78,14 @@ async def check_client_limits():
             expired_clients = await db.get_expired_clients()
             for client in expired_clients:
                 if not client.is_blocked and client.is_active:
-                    client.is_blocked = True
-                    await db.update_client(client)
-                    logger.info(f"Клиент {client.name} заблокирован в БД: истек срок ({client.expires_at})")
+                    # Удаляем peer с сервера AWG
+                    success = await awg_manager.remove_peer_from_server(client.public_key)
+                    if success:
+                        client.is_blocked = True
+                        await db.update_client(client)
+                        logger.info(f"Клиент {client.name} заблокирован: истек срок ({client.expires_at})")
+                    else:
+                        logger.error(f"Не удалось заблокировать клиента {client.name} на сервере AWG")
             
             # Обновление статистики трафика
             stats = await awg_manager.get_interface_stats()
@@ -98,14 +103,19 @@ async def check_client_limits():
                         logger.debug(f"Трафик клиента {client.name} обновлен: {old_traffic} -> {updated_client.traffic_used}")
                     
                     # Проверка превышения лимита трафика
-                    if (updated_client.traffic_limit and 
-                        isinstance(updated_client.traffic_limit, int) and 
-                        updated_client.traffic_used >= updated_client.traffic_limit and 
+                    if (updated_client.traffic_limit and
+                        isinstance(updated_client.traffic_limit, int) and
+                        updated_client.traffic_used >= updated_client.traffic_limit and
                         not updated_client.is_blocked and updated_client.is_active):
-                        
-                        updated_client.is_blocked = True
-                        await db.update_client(updated_client)
-                        logger.info(f"Клиент {updated_client.name} заблокирован в БД: превышен лимит трафика ({updated_client.traffic_used}/{updated_client.traffic_limit})")
+
+                        # Удаляем peer с сервера AWG
+                        success = await awg_manager.remove_peer_from_server(updated_client.public_key)
+                        if success:
+                            updated_client.is_blocked = True
+                            await db.update_client(updated_client)
+                            logger.info(f"Клиент {updated_client.name} заблокирован: превышен лимит трафика ({updated_client.traffic_used}/{updated_client.traffic_limit})")
+                        else:
+                            logger.error(f"Не удалось заблокировать клиента {updated_client.name} на сервере AWG")
         
         except Exception as e:
             logger.error(f"Ошибка в проверке лимитов: {e}")

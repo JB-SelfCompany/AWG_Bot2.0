@@ -951,7 +951,7 @@ async def show_clients_list(callback: CallbackQuery):
     page = 0
     if callback.data.startswith("clients_page:"):
         page = int(callback.data.split(":", 1)[1])
-    
+
     clients = await db.get_all_clients()
     if not clients:
         await edit_or_send_message(
@@ -962,22 +962,26 @@ async def show_clients_list(callback: CallbackQuery):
         )
         await callback.answer()
         return
-    
+
+    # Получаем статистику AWG для определения активности клиентов
+    stats = await awg_manager.get_interface_stats()
+
     per_page = 10
     total_pages = (len(clients) - 1) // per_page + 1
-    
+
     # Проверяем корректность страницы
     if page < 0:
         page = 0
     elif page >= total_pages:
         page = total_pages - 1
-    
+
     await edit_or_send_message(
         callback,
         f"📋 Список клиентов\n\n"
         f"Страница {page + 1} из {total_pages}\n"
-        f"Всего клиентов: {len(clients)}",
-        reply_markup=get_client_list_keyboard(clients, page, per_page)
+        f"Всего клиентов: {len(clients)}\n\n"
+        f"🟢 до 7 дн · 🟡 7-14 дн · 🟠 >14 дн · ⚪ нет · 🔴 блок",
+        reply_markup=get_client_list_keyboard(clients, page, per_page, stats)
     )
     await callback.answer()
 
@@ -1428,26 +1432,43 @@ async def delete_client_confirmed(callback: CallbackQuery):
     """Удалить клиента после подтверждения"""
     client_id = int(callback.data.split(":", 2)[2])
     client = await db.get_client(client_id)
-    
+
     if not client:
         await callback.answer("❌ Клиент не найден", show_alert=True)
         return
-    
+
     try:
         await awg_manager.remove_peer_from_server(client.public_key)
-        
+
         success = await db.delete_client(client_id)
-        
+
         if success:
-            await edit_or_send_message(
-                callback,
-                f"✅ Клиент {client.name} успешно удален",
-                reply_markup=get_clients_menu()
-            )
             await callback.answer("✅ Клиент удален")
+
+            # Возвращаем в список клиентов
+            clients = await db.get_all_clients()
+            if not clients:
+                await edit_or_send_message(
+                    callback,
+                    f"✅ Клиент {client.name} успешно удален\n\n"
+                    "📋 Список клиентов пуст",
+                    reply_markup=get_clients_menu()
+                )
+            else:
+                stats = await awg_manager.get_interface_stats()
+                total_pages = (len(clients) - 1) // 10 + 1
+                await edit_or_send_message(
+                    callback,
+                    f"✅ Клиент {client.name} удален\n\n"
+                    f"📋 Список клиентов\n"
+                    f"Страница 1 из {total_pages}\n"
+                    f"Всего клиентов: {len(clients)}\n\n"
+                    f"🟢 до 7 дн · 🟡 7-14 дн · 🟠 >14 дн · ⚪ нет · 🔴 блок",
+                    reply_markup=get_client_list_keyboard(clients, 0, 10, stats)
+                )
         else:
             await callback.answer("❌ Ошибка при удалении клиента", show_alert=True)
-            
+
     except Exception as e:
         logger.error(f"Ошибка при удалении клиента: {e}")
         await callback.answer("❌ Ошибка при удалении клиента", show_alert=True)
@@ -1588,9 +1609,9 @@ async def process_search_client(message: Message, state: FSMContext):
     
     all_clients = await db.get_all_clients()
     found_clients = [c for c in all_clients if search_term in c.name.lower()]
-    
+
     await state.clear()
-    
+
     if not found_clients:
         if user_id in user_last_message:
             try:
@@ -1606,14 +1627,17 @@ async def process_search_client(message: Message, state: FSMContext):
             except:
                 pass
     else:
+        # Получаем статистику AWG для определения активности клиентов
+        stats = await awg_manager.get_interface_stats()
         if user_id in user_last_message:
             try:
                 await message.bot.edit_message_text(
                     chat_id=user_id,
                     message_id=user_last_message[user_id],
                     text=f"🔍 Результаты поиска\n\n"
-                         f"Найдено клиентов: {len(found_clients)}",
-                    reply_markup=get_client_list_keyboard(found_clients, 0, 10)
+                         f"Найдено клиентов: {len(found_clients)}\n\n"
+                         f"🟢 до 7 дн · 🟡 7-14 дн · 🟠 >14 дн · ⚪ нет · 🔴 блок",
+                    reply_markup=get_client_list_keyboard(found_clients, 0, 10, stats)
                 )
             except:
                 pass
