@@ -1,13 +1,17 @@
-# AmneziaWG Management Bot
+# <div align="center"> 🤖 AmneziaWG Management Bot
+
+<div align="center">
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-green.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.12%2B-blue?logo=python)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?logo=telegram)](https://telegram.org/)
 [![aiogram](https://img.shields.io/badge/aiogram-3.x-blue)](https://docs.aiogram.dev/)
 
 Профессиональный Telegram бот для управления AmneziaWG VPN сервером с полным функционалом администрирования, мониторинга и автоматизации.
 
-> **⚠️ Важно:** Для работы бота требуются root-права и установленный AmneziaWG.
+**⚠️ Важно:** Для работы бота требуются root-права и установленный AmneziaWG.
+
+</div>
 
 ---
 
@@ -199,10 +203,9 @@ sudo apt update && sudo apt upgrade -y
 
 Установка необходимых зависимостей
 ```bash
-sudo apt install -y make build-essential libssl-dev zlib1g-dev
-libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm
-libncurses-dev xz-utils tk-dev libffi-dev liblzma-dev
-python3-openssl git
+sudo apt install -y make build-essential libssl-dev zlib1g-dev \
+libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
+libncurses-dev xz-utils tk-dev libffi-dev liblzma-dev python3-openssl git
 ```
 ---
 
@@ -322,14 +325,11 @@ sudo nano /etc/systemd/system/awg_bot.service
 ```bash
 [Unit]
 Description=AmneziaWG Telegram Management Bot
-After=network.target amneziawg-quick@awg0.service
-Requires=amneziawg-quick@awg0.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/path/to/AWG_Bot2.0
-Environment="PATH=/root/.pyenv/versions/awg_bot_env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/root/.pyenv/versions/awg_bot_env/bin/python main.py
 Restart=always
 RestartSec=10
@@ -529,7 +529,7 @@ sudo systemctl enable awg-quick@awg0
 
 ### База данных
 
-Реализованы следующие оптимизации SQLite[file:25]:
+Реализованы следующие оптимизации SQLite:
 
 #### Connection Pooling
 - Пул из 5 переиспользуемых соединений
@@ -767,22 +767,13 @@ grep ERROR bot.log
 
 ## 🚀 Планы развития
 
-### Версия 3.0 (планируется)
+### Версия 2.1 (планируется)
 
 - [x] **Многопользовательский режим** - раздельное управление для нескольких администраторов
+- [x] **Уведомления** - оповещения о превышении лимитов, истечении срока
 - [ ] **Webhook режим** - альтернатива long polling для больших нагрузок
-- [ ] **Telegram Web App** - расширенный веб-интерфейс внутри Telegram
-- [ ] **Уведомления** - оповещения о превышении лимитов, истечении срока
-- [ ] **Аналитика** - графики использования трафика, статистика подключений
 - [ ] **API интеграция** - REST API для внешних систем
 - [ ] **Множественные серверы** - управление несколькими AWG серверами
-
-### Версия 3.1 (планируется)
-
-- [ ] **Биллинг система** - интеграция с платежными системами
-- [ ] **Реферальная система** - партнерская программа
-- [ ] **Система тарифов** - гибкие пакеты услуг
-- [ ] **Docker контейнер** - упрощенная установка
 
 ---
 
@@ -875,6 +866,6 @@ grep ERROR bot.log
 
 ⭐ Если проект вам помог, поставьте звезду на GitHub!
 
-[Наверх](#amneziawg-management-bot) | [Лицензия](#-лицензия) | [Вклад](#-вклад-в-проект)
+[Наверх](#amneziawg-management-bot)
 
 </div>
