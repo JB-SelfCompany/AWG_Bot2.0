@@ -32,38 +32,48 @@ class AWGManager:
         try:
             username = pwd.getpwuid(os.getuid()).pw_name
             self.logger.info(f"Пользователь: {username}")
-        except:
+        except Exception:
             self.logger.warning("Не удалось получить имя пользователя")
+
+    async def _run_subprocess(self, *args, timeout: float = 15.0):
+        """Запуск subprocess с таймаутом. Возвращает (returncode, stdout, stderr)."""
+        process = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            return process.returncode, stdout, stderr
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.communicate()
+            self.logger.error(f"Таймаут ({timeout}s) при выполнении: {' '.join(str(a) for a in args)}")
+            raise
 
     async def save_server_config(self) -> bool:
         """Сохранить конфигурацию сервера с sudo если необходимо"""
         self.logger.debug("Сохранение конфигурации сервера")
         try:
-            process = await asyncio.create_subprocess_exec(
-                'awg-quick', 'save', self.config.awg_interface,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            rc, stdout, stderr = await self._run_subprocess(
+                'awg-quick', 'save', self.config.awg_interface
             )
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode == 0:
+            if rc == 0:
                 self.logger.debug("Конфигурация сохранена")
                 return True
-            
-            sudo_process = await asyncio.create_subprocess_exec(
-                'sudo', 'awg-quick', 'save', self.config.awg_interface,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+
+            rc, stdout, stderr = await self._run_subprocess(
+                'sudo', 'awg-quick', 'save', self.config.awg_interface
             )
-            sudo_stdout, sudo_stderr = await sudo_process.communicate()
-            
-            if sudo_process.returncode == 0:
+            if rc == 0:
                 self.logger.debug("Конфигурация сохранена с sudo")
                 return True
             else:
-                self.logger.error(f"Ошибка сохранения конфигурации с sudo: {sudo_stderr.decode()}")
+                self.logger.error(f"Ошибка сохранения конфигурации с sudo: {stderr.decode()}")
                 return False
-            
+
+        except asyncio.TimeoutError:
+            return False
         except Exception as e:
             self.logger.error(f"Ошибка при сохранении конфигурации: {e}")
             return False
@@ -72,22 +82,16 @@ class AWGManager:
         """Получить статистику интерфейса с трекингом IP"""
         self.logger.debug("Получение статистики интерфейса")
         try:
-            process = await asyncio.create_subprocess_exec(
-                'awg', 'show', self.config.awg_interface,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            rc, stdout, stderr = await self._run_subprocess(
+                'awg', 'show', self.config.awg_interface
             )
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode != 0:
-                sudo_process = await asyncio.create_subprocess_exec(
-                    'sudo', 'awg', 'show', self.config.awg_interface,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+
+            if rc != 0:
+                rc, stdout, stderr = await self._run_subprocess(
+                    'sudo', 'awg', 'show', self.config.awg_interface
                 )
-                stdout, stderr = await sudo_process.communicate()
-                
-                if sudo_process.returncode != 0:
+
+                if rc != 0:
                     self.logger.error(f"Ошибка получения статистики: {stderr.decode()}")
                     return {}
             
@@ -122,13 +126,8 @@ class AWGManager:
     async def _track_client_ip(self, public_key: str, client_ip: str):
         """Трекинг IP клиента по его public key"""
         try:
-            clients = await self.db.get_all_clients()
-            client = None
-            for c in clients:
-                if c.public_key == public_key:
-                    client = c
-                    break
-            
+            client = await self.db.get_client_by_public_key(public_key)
+
             if not client:
                 self.logger.warning(f"Клиент с public key {public_key[:20]}... не найден в БД")
                 return
@@ -446,21 +445,20 @@ class AWGManager:
         if client.has_ipv6 and client.ipv6_address:
             allowed_ips += f", {client.ipv6_address}/128"
 
-        process = await asyncio.create_subprocess_exec(
-            'awg', 'set', self.config.awg_interface,
-            'peer', client.public_key,
-            'allowed-ips', allowed_ips,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode == 0:
-            self.logger.info("Пир добавлен без sudo")
-            await self.save_server_config()
-            return True
-        else:
-            self.logger.warning(f"Ошибка добавления без sudo: {stderr.decode()}")
+        try:
+            rc, stdout, stderr = await self._run_subprocess(
+                'awg', 'set', self.config.awg_interface,
+                'peer', client.public_key,
+                'allowed-ips', allowed_ips
+            )
+            if rc == 0:
+                self.logger.info("Пир добавлен без sudo")
+                await self.save_server_config()
+                return True
+            else:
+                self.logger.warning(f"Ошибка добавления без sudo: {stderr.decode()}")
+                return False
+        except asyncio.TimeoutError:
             return False
 
     async def add_peer_sudo(self, client: Client) -> bool:
@@ -471,21 +469,20 @@ class AWGManager:
         if client.has_ipv6 and client.ipv6_address:
             allowed_ips += f", {client.ipv6_address}/128"
 
-        process = await asyncio.create_subprocess_exec(
-            'sudo', 'awg', 'set', self.config.awg_interface,
-            'peer', client.public_key,
-            'allowed-ips', allowed_ips,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode == 0:
-            self.logger.info("Пир добавлен с sudo")
-            await self.save_server_config()
-            return True
-        else:
-            self.logger.error(f"Ошибка добавления пира с sudo: {stderr.decode()}")
+        try:
+            rc, stdout, stderr = await self._run_subprocess(
+                'sudo', 'awg', 'set', self.config.awg_interface,
+                'peer', client.public_key,
+                'allowed-ips', allowed_ips
+            )
+            if rc == 0:
+                self.logger.info("Пир добавлен с sudo")
+                await self.save_server_config()
+                return True
+            else:
+                self.logger.error(f"Ошибка добавления пира с sudo: {stderr.decode()}")
+                return False
+        except asyncio.TimeoutError:
             return False
 
     async def create_client_config(self, client: Client) -> str:
@@ -537,8 +534,6 @@ class AWGManager:
             ])
 
             return '\n'.join(config_lines)
-            self.logger.debug("Конфигурация создана успешно")
-            return config
             
         except Exception as e:
             self.logger.error(f"Ошибка при создании конфигурации: {e}")
@@ -548,22 +543,21 @@ class AWGManager:
         """Удалить пира с сервера AmneziaWG"""
         self.logger.info(f"Удаление пира с сервера: {public_key[:20]}...")
         try:
-            process = await asyncio.create_subprocess_exec(
+            rc, stdout, stderr = await self._run_subprocess(
                 'sudo', 'awg', 'set', self.config.awg_interface,
-                'peer', public_key, 'remove',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                'peer', public_key, 'remove'
             )
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode == 0:
+
+            if rc == 0:
                 self.logger.info("Пир удален с сервера")
                 await self.save_server_config()
                 return True
             else:
                 self.logger.error(f"Ошибка удаления пира: {stderr.decode()}")
                 return False
-                
+
+        except asyncio.TimeoutError:
+            return False
         except Exception as e:
             self.logger.error(f"Ошибка при удалении пира: {e}")
             return False
@@ -583,9 +577,10 @@ class AWGManager:
                 content = f.read()
 
             skip_params = {
-                'PrivateKey', 'PublicKey', 'Address', 'ListenPort', 
-                'PostUp', 'PostDown', 'DNS', 'AllowedIPs', 
-                'Endpoint', 'PersistentKeepalive', 'PresharedKey', 'FwMark'
+                'PrivateKey', 'PublicKey', 'Address', 'ListenPort',
+                'PostUp', 'PostDown', 'PreUp', 'PreDown', 'DNS', 'AllowedIPs',
+                'Endpoint', 'PersistentKeepalive', 'PresharedKey', 'FwMark',
+                'Table', 'SaveConfig'
             }
             
             amnezia_params = {}

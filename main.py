@@ -11,53 +11,25 @@ from handlers import admin_router
 from middlewares.auth import AuthMiddleware
 from database.database import init_db, get_db
 from services.awg_manager import AWGManager
+from utils.traffic_parser import parse_traffic_size
 
 async def update_client_traffic_usage_main(client, stats, awg_manager, db):
     """Обновление использования трафика клиента из статистики AWG"""
     if not stats:
         return
-    
+
     transfer = stats.get('transfer', '0 B, 0 B')
     try:
         rx_str, tx_str = transfer.split(', ')
-        
-        def parse_traffic_size(size_str: str) -> int:
-            """Преобразование строки размера трафика в байты"""
-            size_str = size_str.strip()
-            if 'received' in size_str:
-                size_str = size_str.replace(' received', '')
-            if 'sent' in size_str:
-                size_str = size_str.replace(' sent', '')
-            
-            parts = size_str.split()
-            if len(parts) != 2:
-                return 0
-            
-            value = float(parts[0])
-            unit = parts[1].upper()
-            
-            multipliers = {
-                'B': 1,
-                'KIB': 1024,
-                'MIB': 1024**2,
-                'GIB': 1024**3,
-                'TIB': 1024**4,
-                'KB': 1000,
-                'MB': 1000**2,
-                'GB': 1000**3,
-                'TB': 1000**4
-            }
-            
-            return int(value * multipliers.get(unit, 1))
-        
+
         rx_bytes = parse_traffic_size(rx_str)
         tx_bytes = parse_traffic_size(tx_str)
         total_bytes = rx_bytes + tx_bytes
-        
+
         if total_bytes != client.traffic_used:
             client.traffic_used = total_bytes
             await db.update_client(client)
-    
+
     except Exception as e:
         logging.error(f"Ошибка при парсинге трафика: {e}")
 
@@ -69,11 +41,14 @@ async def check_client_limits():
     db = get_db()
     
     await asyncio.sleep(30)
-    
+
+    consecutive_errors = 0
+    max_consecutive_errors = 5
+
     while True:
         try:
             logger.info("Проверка лимитов клиентов...")
-            
+
             # Проверка истекших клиентов
             expired_clients = await db.get_expired_clients()
             for client in expired_clients:
@@ -86,22 +61,22 @@ async def check_client_limits():
                         logger.info(f"Клиент {client.name} заблокирован: истек срок ({client.expires_at})")
                     else:
                         logger.error(f"Не удалось заблокировать клиента {client.name} на сервере AWG")
-            
+
             # Обновление статистики трафика
             stats = await awg_manager.get_interface_stats()
             all_clients = await db.get_all_clients()
-            
+
             for client in all_clients:
                 if client.public_key in stats:
                     client_stats = stats[client.public_key]
                     old_traffic = client.traffic_used
-                    
+
                     await update_client_traffic_usage_main(client, client_stats, awg_manager, db)
-                    
+
                     updated_client = await db.get_client(client.id)
                     if updated_client.traffic_used != old_traffic:
                         logger.debug(f"Трафик клиента {client.name} обновлен: {old_traffic} -> {updated_client.traffic_used}")
-                    
+
                     # Проверка превышения лимита трафика
                     if (updated_client.traffic_limit and
                         isinstance(updated_client.traffic_limit, int) and
@@ -116,11 +91,24 @@ async def check_client_limits():
                             logger.info(f"Клиент {updated_client.name} заблокирован: превышен лимит трафика ({updated_client.traffic_used}/{updated_client.traffic_limit})")
                         else:
                             logger.error(f"Не удалось заблокировать клиента {updated_client.name} на сервере AWG")
-        
+
+            consecutive_errors = 0
+            await asyncio.sleep(300)
+
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
-            logger.error(f"Ошибка в проверке лимитов: {e}")
-        
-        await asyncio.sleep(300)
+            consecutive_errors += 1
+            logger.error(f"Ошибка в проверке лимитов (попытка {consecutive_errors}/{max_consecutive_errors}): {e}")
+
+            if consecutive_errors >= max_consecutive_errors:
+                logger.critical("Слишком много последовательных ошибок в check_client_limits, задача останавливается")
+                return
+
+            # Exponential backoff: 10s, 20s, 40s, 80s, 160s
+            wait_time = min(10 * (2 ** (consecutive_errors - 1)), 300)
+            logger.info(f"Повтор через {wait_time} секунд...")
+            await asyncio.sleep(wait_time)
 
 async def main():
     """Основная функция запуска бота"""

@@ -881,7 +881,7 @@ async def process_traffic_limit(callback: CallbackQuery, state: FSMContext):
             has_ipv6=has_ipv6,
             endpoint=endpoint,
             expires_at=expires_at,
-            traffic_limit=traffic_limit,
+            traffic_limit=traffic_limit_bytes,
             is_active=True,
             is_blocked=False
         )

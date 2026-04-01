@@ -1,3 +1,4 @@
+import html
 from datetime import datetime
 from typing import Dict, Any, Optional
 from database.database import Client
@@ -60,7 +61,7 @@ def format_client_config(client_name: str, config_text: str) -> str:
     """Форматирование конфигурации клиента"""
     return f"""📄 Конфигурация для {client_name}
 
-<pre>{config_text}</pre>\n
+<pre>{html.escape(config_text)}</pre>\n
 💾 Сохраните этот текст в файл с расширением .conf
 📱 Или импортируйте через QR-код в приложении AmneziaWG"""
 
