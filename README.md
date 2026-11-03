@@ -1,3 +1,5 @@
+> ** Moved ** development continues at https://git.shd.company/bubblegum/AWG_Bot2.0. This GitHub copy is archived.
+
 # <div align="center"> 🤖 AmneziaWG Management Bot
 
 <div align="center">
